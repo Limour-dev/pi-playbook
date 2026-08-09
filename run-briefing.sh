@@ -26,6 +26,7 @@ mkdir -p "$BRIEFING_DIR"
 cd "$PLAYBOOK_DIR" || exit 1
 
 LOG_FILE="$BRIEFING_DIR/run-$(date +%Y-%m-%d).log"
+LOCK_FILE="$BRIEFING_DIR/briefing.lock"
 
 # 3) 防重入：上一次还没跑完（如生成/推送耗时过长）就跳过本次
 exec 9>"$LOCK_FILE"
