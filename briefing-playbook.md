@@ -13,6 +13,8 @@
 交付物：**一个自包含、可直接发布的 HTML 文件**（内联 CSS，无外部依赖），命名如 `briefing-YYYY-MM-DD.html`，**放在 `briefing-playbook/` 文件夹下**（与 playbook 同名的文件夹）。
 发布：每次生成后推送到服务器 b 的 `~/base/NGPM/data/briefing/`，远端 `index.html` 软链接始终指向最新一篇（详见 §8.1）。
 
+**执行方式（用户明确要求）**：整个 playbook 从数据获取 → 写作 → 标记已读 → 发布 → 校验，是**一次操作**，中间不向用户请求确认；更新服务器 b 的内容无需确认，直接执行到底。只有出错（抓取失败/推送失败）才停下报告。
+
 ---
 
 ## 1. 环境准备
@@ -74,11 +76,11 @@ miniflux entries --status unread --limit 100 --order published_at --direction de
 miniflux entry <id>    # 单篇全文（HTML），用正则去标签
 ```
 
-- **剔除标题党/存疑内容**：AI 聚合频道里离谱的传闻（如"SpaceX 收购 Cursor"、"AV 转码"）不要写进简报。只写可验证的事实。
+- **剔除标题党/存疑内容**：AI 聚合频道里离谱的传闻（如"SpaceX 收购 Cursor"、"OpenAI 最大预训练模型 Doug 曝光"）不要写进简报。只写可验证的事实。注意：真实存在的人文故事（如"AV 转码"Noa 用 AI 自学编程）不算传闻，可写入人文主题。
 
 ### 2.4 一周回顾的数据
 
-一周回顾需要 `--after <一周前日期>` 再拉一次（如 `--after 2026-08-02`），重点看深度 feed 在 8 天窗口内的主线（模型发布、安全事件、组织变动、硬件动向）。
+一周回顾需要 `--after <一周前日期>` 再拉一次（如 `--after 2026-08-02`），重点看深度 feed 在 8 天窗口内的主线（模型发布、安全事件、组织变动、硬件动向），同时扫一遍地缘（战争/贸易）与国内批判（司法/信访/科研伦理）的周度主线。
 
 ---
 
@@ -90,7 +92,9 @@ miniflux entry <id>    # 单篇全文（HTML），用正则去标签
 miniflux mark <id1> <id2> ... --status read
 ```
 
-16 条以内直接列 id；大数量用 `mark --all --from unread --status read --dry-run` 预览后 `--yes`。
+- **只标窗口内 unread 的 id**：从拉取数据里筛 `status == 'unread'` 的 id，直接 `miniflux mark <id...> --status read`（实测 40 条左右一条 argv 即可，输出 `Marked N entries as read` 即成功）。
+- **不要用 `mark --all`**：会误标窗口外的旧未读；仅在确认无窗口外未读时才可考虑。
+- 数量极大（几百条）时先 `--dry-run` 预览，再决定分批或 `--yes`。
 
 ---
 
@@ -257,9 +261,13 @@ miniflux mark <id1> <id2> ... --status read
 | 问题 | 处理 |
 |---|---|
 | `--after 2d` 返回 0 条 | 改用绝对日期 `--after YYYY-MM-DD` |
+| `miniflux entries` 输出不是数组 | 返回的是 `{total, entries}` 对象，解析用 `d['entries']`；`total` 可能大于 200 |
+| 窗口内条目 > 200（如 328 条） | `--offset 200 --limit 200` 再查一次，两次结果合并 |
+| `--compact` 里 feed 不是字符串 | feed 是嵌套对象，用 `e['feed']['title']`（别当成字符串 `.get('title')` 会报错） |
 | 漏掉已读消息 | 必须带 `--status read,unread` |
+| HN 正文抓取失败 | leanrada / energy.gov / bloomberg / guardian 等常失败返回空，退回标题+评论数写，不编造 |
 | 不知道哪些是深度文章 | 按 feed 分组统计，快讯看标题、深度读正文 |
-| rank 1 分数很低且无正文 | 选 rank 2+ 有实质内容的帖子当头条 |
+| rank 1 分数很低且无正文 | 选 rank 2+ 有实质内容的帖子当头条（如 8/9 头条 rank 54、772 分） |
 | 头条正文抓取失败 | 用标题+评论数写，注明"正文未能抓取"，不编造 |
 | 用户说"太 AI 了" | 检查：是否用了"不是…而是…"、比喻、跳跃式总结句；改为平实因果陈述 |
 | 远端 index.html 指向旧的/缺失 | 先 `find -type l -delete` 清掉所有软链接，再 `ln -sf 最新文件 index.html` |
@@ -271,25 +279,93 @@ miniflux mark <id1> <id2> ... --status read
 - 文件放在 `briefing-playbook/` 文件夹（与 playbook 同名）下：`briefing-playbook/briefing-YYYY-MM-DD.html`
 - 完成后向用户简述：① 结构（几个主题+回顾）② 头条选择理由 ③ 已读标记情况 ④ 剔除的存疑内容 ⑤ 可选的调整项（版式/长度/导出 Markdown）
 
-### 8.1 发布到远端（每次运行必做）
 
-生成并确认质量后，将简报推送到服务器 b（`~/.ssh/config` 中已配置 `Host b`：`b.limour.top:20022`，User root），并保证远端 `index.html` 始终指向最新一篇：
+### 8.1 发布到远端（每次运行必做，一条命令一次完成，无需用户确认）
+
+生成并确认质量后，将简报推送到服务器 b（`~/.ssh/config` 中已配置 `Host b`：`b.limour.top:20022`，User root），并保证远端 `index.html` 始终指向最新一篇。**整条命令一次执行到底，不拆步、不中途确认**：
 
 ```bash
-# 1) 推送当天文件（远端目录不存在会自动创建）
-scp -pr briefing-playbook/briefing-YYYY-MM-DD.html b:~/base/NGPM/data/briefing/
-
-# 2) 清理远端可能的软链接（历史遗留/误建，一律删掉）
-# 3) 将最新一篇软链接为 index.html（旧文件保留，只是不再被链接）
-ssh b "cd ~/base/NGPM/data/briefing && find . -maxdepth 1 -type l -delete && ln -sf briefing-YYYY-MM-DD.html index.html"
-
-# 4) 校验：两端 MD5 一致 + 远端软链接正确
+# 推送 + 清理软链接 + 建新软链接 + 远端 MD5，一条链式命令（&& 任一失败即停）
+scp -q briefing-playbook/briefing-YYYY-MM-DD.html b:~/base/NGPM/data/briefing/ && \
+ssh b "cd ~/base/NGPM/data/briefing && find . -maxdepth 1 -type l -delete && ln -sf briefing-YYYY-MM-DD.html index.html && md5sum briefing-YYYY-MM-DD.html" && \
 md5sum briefing-playbook/briefing-YYYY-MM-DD.html
-ssh b "cd ~/base/NGPM/data/briefing && ls -la && md5sum briefing-YYYY-MM-DD.html"
 ```
 
+校验方法：上面命令输出两端两个 MD5，**一致即推送成功**；想再看软链接就补 `ssh b "ls -la ~/base/NGPM/data/briefing"`（只在异常时查，平时不必）。
+
 **要点（用户明确要求）：**
-- 远端只保留一条软链接 `index.html`（指向最新），**不存在其他软链接**。
+- **发布无需确认**：scp/ssh 环节直接执行，不询问用户；整个 playbook 是一次操作（见 §0）。
+- 远端只保留一条软链接 `index.html`（指向最新），**不存在其他软链接**；`find -type l -delete` 兜底清理。
 - 历史简报文件全部保留在目录里，只是不再被 `index.html` 指向（`ln -sf` 会先删旧链接再建新的）。
-- 用 `find -type l -delete` 兜底清理，防止目录里混入意外软链接。
-- 推送后必须核对 `ls -la` 结果与两端 MD5，确认传输完整、链接指向正确。
+- 若 `scp` 或 `ssh` 某一步失败（非零退出），停下报告，不要静默继续。
+
+---
+
+## 9. 常用代码段（直接抄，均为本次实操验证）
+
+### 9.1 拉取两天窗口数据 + 分页 + 按 feed 统计
+
+```bash
+export PATH="/home/limour/.pi/agent/skills/miniflux/bin:$PATH"
+miniflux entries --status read,unread --after <今天减2天> --order published_at --direction desc --limit 200 --compact > /tmp/mf1.json
+miniflux entries --status read,unread --after <今天减2天> --order published_at --direction desc --limit 200 --offset 200 --compact > /tmp/mf2.json
+```
+
+```python
+import json
+from collections import Counter
+d1 = json.load(open('/tmp/mf1.json'))['entries']   # 返回 {total, entries}，不是数组！
+d2 = json.load(open('/tmp/mf2.json'))['entries']
+all_e = d1 + d2                                    # total > 200 时必须合并两页
+json.dump(all_e, open('/tmp/mf_all.json', 'w'), ensure_ascii=False)
+print('total:', len(all_e))
+c = Counter(e['feed']['title'] for e in all_e)     # --compact 下 feed 是嵌套对象
+for k, v in c.most_common(): print(f'{v:4d}  {k}')
+```
+
+### 9.2 读正文（去 HTML 标签）
+
+```bash
+miniflux entry <id> | python3 -c "
+import json, sys, re
+d = json.load(sys.stdin)
+t = re.sub(r'<[^>]+>', ' ', d.get('content') or '')
+t = re.sub(r'\s+', ' ', t)
+print('TITLE:', d.get('title')); print(t[:700])
+"
+```
+
+### 9.3 筛窗口内 unread id 并批量标已读（不要用 mark --all）
+
+```bash
+python3 -c "
+import json
+all_e = json.load(open('/tmp/mf_all.json'))
+unread = [str(e['id']) for e in all_e if e['status'] == 'unread']
+print(len(unread)); print(' '.join(unread))
+" > /tmp/mark_ids.txt
+IDS=$(tail -1 /tmp/mark_ids.txt)
+miniflux mark $IDS --status read    # 输出 Marked N entries as read 即成功
+```
+
+### 9.4 发布前质量检查（标签配对 / 禁句 / 外链）
+
+```python
+import re
+html = open('briefing-YYYY-MM-DD.html').read()
+for tag in ['div', 'span', 'b', 'h3', 'h4', 'p', 'footer']:
+    o = len(re.findall(r'<%s[\s>]' % tag, html)); c = len(re.findall(r'</%s>' % tag, html))
+    assert o == c, f'{tag} {o}/{c} MISMATCH'
+for bad in ['不是…而是…', '硬币的两面', '把镜头拉远']:
+    assert bad not in html, bad
+assert not re.findall(r'https?://[^"]+', html), '外部资源！'
+print('OK')
+```
+
+### 9.5 一次执行完整流程（发布已在 §8.1）
+
+```bash
+cd /home/limour/pi-playbook
+# 1) 数据 → 2) 写作 → 3) 标已读(9.3) → 4) 质量检查(9.4) → 5) 发布(8.1) → 6) git commit playbook 变更
+# 全流程一次操作，发布环节不向用户确认（见 §0）
+```
