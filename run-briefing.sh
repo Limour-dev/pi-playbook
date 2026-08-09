@@ -5,7 +5,7 @@
 # 功能：
 #   1. 用 pi-agent（非交互 -p）执行 briefing-playbook.md
 #   2. 只加载 miniflux + hn-briefing 两个技能（--no-skills + --skill）
-#   3. 工作目录 = briefing-playbook/，执行日志/错误也输出到该目录
+#   3. 工作目录 = pi-playbook（与 playbook 内相对路径一致），执行日志/错误输出到 briefing-playbook/
 # ============================================================
 set -uo pipefail
 
@@ -23,7 +23,7 @@ PI_CMD=(/home/limour/micromamba/envs/pi/bin/npx --yes @earendil-works/pi-coding-
 export PATH="/home/limour/micromamba/envs/pi/bin:/home/limour/.pi/agent/skills/miniflux/bin:/home/limour/.agents/skills/hn-briefing/bin:$PATH"
 
 mkdir -p "$BRIEFING_DIR"
-cd "$BRIEFING_DIR" || exit 1
+cd "$PLAYBOOK_DIR" || exit 1
 
 LOG_FILE="$BRIEFING_DIR/run-$(date +%Y-%m-%d).log"
 
@@ -38,7 +38,7 @@ fi
     echo ""
     echo "============================================================"
     echo "[$(date '+%F %T')] 开始执行简报任务"
-    echo "cwd:      $BRIEFING_DIR"
+    echo "cwd:      $PLAYBOOK_DIR"
     echo "playbook: $PLAYBOOK_FILE"
     echo "============================================================"
 
