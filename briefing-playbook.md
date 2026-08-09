@@ -1,0 +1,288 @@
+# 科技简报生成手册（Daily Tech Briefing Playbook）
+
+> 本手册写给任何新的 agent。读完全文即可独立完成"订阅 + HN 融合简报"的生成与发布，满足用户的全部要求。本手册总结了历次迭代中用户明确提出的偏好与踩过的坑，**优先级高于一般直觉**。
+
+---
+
+## 0. 任务概述
+
+用户每天会要求：
+
+> "总结我订阅最近两天的消息，结合 HN 简报，生成一份简报 HTML 以便发布。"
+
+交付物：**一个自包含、可直接发布的 HTML 文件**（内联 CSS，无外部依赖），命名如 `briefing-YYYY-MM-DD.html`。
+
+发布：每次生成后推送到服务器 b 的 `~/base/NGPM/data/briefing/`，远端 `index.html` 软链接始终指向最新一篇（详见 §8.1）。
+
+---
+
+## 1. 环境准备
+
+两个技能是唯一入口，都在 `/home/limour/.pi/agent/skills/` 下：
+
+```bash
+export PATH="/home/limour/.pi/agent/skills/miniflux/bin:$PATH"
+export PATH="/home/limour/.pi/agent/skills/hn-briefing/bin:$PATH"
+
+miniflux healthcheck          # 应输出 healthy
+miniflux me                   # 当前用户
+```
+
+- 首次执行前**先读两个技能的 SKILL.md**（`miniflux/SKILL.md`、`hn-briefing/SKILL.md`），它们描述了全部命令。
+- 所有命令输出 JSON 到 stdout。
+
+---
+
+## 2. 数据获取
+
+### 2.1 订阅数据（miniflux）
+
+```bash
+# 最近两天，必须包含已读！(用户：简报每日生成，昨天的简报已把前两天的标为已读了)
+miniflux entries --status read,unread --after <绝对日期> --order published_at --direction desc --limit 200 --compact
+```
+
+**关键坑（务必遵守）：**
+
+1. **不要用相对时间 `--after 2d`**——实测返回 0 结果，有 bug。一律用绝对 ISO 日期：`--after 2026-08-07`（今天减 2 天）。
+2. **必须带 `--status read,unread`**——否则默认只查 unread，会漏掉昨天已读的消息。
+3. **不要用 `--fields`**——它会丢掉 feed 信息（feed 变成 `?`），无法按订阅源筛选。要精简用 `--compact`。
+4. 数量大时分页：`--offset 200 --limit 200` 再查一次。
+5. 条目超过 200 时，先按 feed 统计分布（`collections.Counter`），心里有数再读正文。
+
+### 2.2 HN 数据
+
+```bash
+hn-briefing top 100 > /tmp/hn_top.json
+hn-briefing content "<url>"    # 抓取头条正文，返回 {title, text}
+```
+
+- **头条选择**：默认取 rank 1，但 rank 1 常是刚发布、分数很低（如 42 分）的帖子，无实质正文。此时**结合分数与评论数**选 rank 2 或更高的成熟帖子（如 282 分/106 评论），并在简报中说明。
+- 正文抓取可能失败（付费墙/反爬），失败时退回标题 + 常识，**不要编造内容**。
+
+### 2.3 阅读正文的策略
+
+- 快讯类 feed（金十数据、联合早报、风向旗、竹新社）：**看标题即可**，偶尔读正文。
+- 深度类 feed（MIT 科技评论、cnBeta、AI 聚合、小众软件、中国数字时代）：**读正文**，提取 1–2 个硬事实（具体数字、确切结论）。
+- 读正文命令：
+
+```bash
+miniflux entries --status unread --limit 100 --order published_at --direction desc --compact --plain-text   # 批量读未读正文
+miniflux entry <id>    # 单篇全文（HTML），用正则去标签
+```
+
+- **剔除标题党/存疑内容**：AI 聚合频道里离谱的传闻（如"SpaceX 收购 Cursor"、"AV 转码"）不要写进简报。只写可验证的事实。
+
+### 2.4 一周回顾的数据
+
+一周回顾需要 `--after <一周前日期>` 再拉一次（如 `--after 2026-08-02`），重点看深度 feed 在 8 天窗口内的主线（模型发布、安全事件、组织变动、硬件动向）。
+
+---
+
+## 3. 标记已读
+
+读完并写进简报的未读条目，全部标记已读（用户明确要求）：
+
+```bash
+miniflux mark <id1> <id2> ... --status read
+```
+
+16 条以内直接列 id；大数量用 `mark --all --from unread --status read --dry-run` 预览后 `--yes`。
+
+---
+
+## 4. 写作规范（用户的核心要求，逐条遵守）
+
+### 4.1 结构（自上而下）
+
+```
+1. 顶部一句话（lead，深色块）        —— 全文唯一的总述
+2. ①~⑤ 主题部分（约 5 个）           —— 订阅与 HN 完全融合，不分成两大块
+3. 头条黑卡（Headline of the Day）    —— 放在最相关的主题段之后
+4. ⑥ 一周回顾                        —— 最后，对最近一周的总结
+5. footer                            —— 数据来源 + 数据窗口 + 已读标记说明
+```
+
+### 4.2 融合规则
+
+- **订阅与 HN 彻底融合**：每个主题部分内部同时编织订阅消息和 HN 热度。例如"AI 军备竞赛"部分既写摩尔线程/月之暗面，也写 HN 的 DeepSeek V4/AMD 收购；"硬件焦虑"部分把 HN 头条《My server is a phone now》和订阅里的国产算力对照。
+- **不要**出现"一、我的订阅"“二、Hacker News 简报"这样的分节。
+
+### 4.3 每部分内部格式：引入段 + 分析段
+
+每个主题部分 = **plain 引入段**（浅橙色块）+ **card 分析段**（白底块）。
+
+**引入段（plain）要求：**
+- 初中生能轻松读懂，**不直接放数字**（"上半年营收增长明显"可以，"17.36 亿元、同比 +147.42%"不行）。
+- **必须落具体事实**，讲清"这周发生了什么"（谁、干了什么），不许空泛感慨（"AI 是全世界最热的话题"这类是反面例子）。
+- 和后面的分析**互补不重复**：引入讲人话版的故事线，分析给数字和细节。
+- **不要空泛的比喻**（"算得特别快的计算器""同一枚硬币的两面"都是反面例子）。
+
+**分析段（card）要求：**
+- 逻辑连贯，**不要跳跃**：句与句、段与段之间要有明确的因果或并列关系词（"原因是…""针对的是…""反映的是…"）。
+- **禁止"不是…而是…"句式**以及任何空泛对比（"正把物尽其用逼成新的理性"是反面例子）。
+- 直接陈述事实 + 数字（`<span class="num">` 高亮关键数字）。
+- 可读正文后给 1–2 个硬事实，绝不编造。
+
+### 4.4 语言风格（去 AI 腔）
+
+- 用平实的因果陈述，不用修辞性总结。
+- 反面例子（曾犯过，不要重复）：
+  - "它把…表层问题，连到了…更深的结构性焦虑上"
+  - "脱钩与能源安全是同一枚硬币的两面：一方在为失去市场买单"
+  - "把镜头拉远一点看这一周"
+  - "AI 的钱与人都在从'做大模型'转向…"
+  - "模型不再只是更快地计算，而是开始适应个体与场景"
+- 正确示范（平铺直叙、信息密度高）：
+  - "德国上半年对华出口同比降逾 12%，中国从 2021 年的第二大出口市场跌至第九大。"
+  - "德国在承受减少对华依赖的代价，中国在增加自己的能源储备，两件事在本周同时发生。"
+
+### 4.5 数字使用
+
+- 只在分析段出现，用 `<span class="num">` 高亮。
+- 只标注原文给出的数字（points/comments、营收、百分比、金额），不编造。
+- HN 帖子标注：`（772 分）` 或 `（928 分/694 评论）`。
+
+---
+
+## 5. HTML 模板（直接套用）
+
+结构、CSS、class 命名固定如下（复制自历次成品）：
+
+```html
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>科技简报 · YYYY-MM-DD</title>
+<style>
+  :root { --bg:#faf9f7; --card:#fff; --ink:#1a1a1a; --muted:#6b6b6b; --line:#e8e5e0; --accent:#b5492e; --accent-soft:#f6e8e2; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:"PingFang SC","Hiragino Sans GB","Noto Sans CJK SC","Microsoft YaHei",sans-serif; background:var(--bg); color:var(--ink); line-height:1.8; padding:40px 16px; }
+  .wrap { max-width:720px; margin:0 auto; }
+  header { border-bottom:3px solid var(--ink); padding-bottom:18px; margin-bottom:24px; }
+  header .kicker { font-size:13px; letter-spacing:.2em; color:var(--muted); text-transform:uppercase; }
+  header h1 { font-size:30px; font-weight:800; margin:6px 0 2px; }
+  header .meta { font-size:13px; color:var(--muted); }
+  .lead { background:var(--ink); color:#fff; border-radius:10px; padding:18px 22px; font-size:15px; margin-bottom:36px; }
+  .lead b { color:#f0b09a; }
+  h3 { font-size:18px; font-weight:800; margin:40px 0 12px; padding-left:12px; border-left:4px solid var(--accent); }
+  .plain { background:var(--accent-soft); border-radius:10px; padding:14px 20px; font-size:14.5px; color:#5c3a2b; margin-bottom:12px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:20px 24px; font-size:14.5px; }
+  .card p { margin-bottom:12px; } .card p:last-child { margin-bottom:0; }
+  .card .num { color:var(--accent); font-weight:700; }
+  .hn-headline { background:var(--ink); color:#fff; border-radius:10px; padding:22px; margin-top:12px; }
+  .hn-headline .rank { font-size:12px; letter-spacing:.15em; color:#d9a08d; text-transform:uppercase; }
+  .hn-headline h4 { font-size:19px; font-weight:800; margin:6px 0 4px; line-height:1.4; }
+  .hn-headline .stats { font-size:12.5px; color:#c9c9c9; }
+  .hn-headline p { font-size:14px; color:#e8e8e8; margin-top:10px; }
+  footer { margin-top:48px; padding-top:16px; border-top:1px solid var(--line); font-size:12px; color:var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="kicker">Daily Tech Briefing</div>
+    <h1>科技简报</h1>
+    <div class="meta">YYYY 年 M 月 D 日 · 周X · 订阅聚合 + Hacker News 融合</div>
+  </header>
+
+  <div class="lead"><b>一句话：</b>……（全文唯一总述，纯事实，无修辞）</div>
+
+  <h3>① 主题一</h3>
+  <div class="plain">……（引入：无数字、初中生可读、落具体事实）</div>
+  <div class="card">
+    <p>……（分析：带数字、融合订阅+HN、逻辑连贯）</p>
+    <p>……</p>
+  </div>
+
+  <!-- 更多主题部分 ②③④⑤ -->
+
+  <div class="hn-headline">
+    <div class="rank">Headline of the Day</div>
+    <h4>头条标题</h4>
+    <div class="stats">N points / M comments · 来源</div>
+    <p>……（2–3 句实质摘要，不复述标题）</p>
+  </div>
+
+  <h3>⑥ 一周回顾</h3>
+  <div class="plain">……</div>
+  <div class="card">
+    <p><b>小标题。</b>……</p>
+    <p><b>小标题。</b>……</p>
+    <p><b>小标题。</b>……</p>
+  </div>
+
+  <footer>
+    数据来源：Miniflux 订阅聚合（…，覆盖 M 月 D–D 日，含已读与未读）· Hacker News 前 100 名。<br>
+    由 pi 自动生成 · 今日未读 N 条已全部标记为已读。
+  </footer>
+</div>
+</body>
+</html>
+```
+
+**常用主题划分（参考，按当天内容调整）**：① AI 军备竞赛与人才洗牌 ② 写代码的人在想什么（程序员职业焦虑）③ 电脑越来越贵（硬件/内存焦虑）④ AI 开始"看懂"世界（科研前沿）⑤ 世界大事（贸易/能源/地缘）⑥ 一周回顾。
+
+---
+
+## 6. 质量检查清单（发布前逐项过）
+
+- [ ] 顶部有一句话（lead），纯事实、无修辞
+- [ ] 没有"我的订阅 / HN 简报"分节，已完全融合
+- [ ] 每个主题部分 = plain 引入 + card 分析；引入无数字、初中生可读、落具体事实
+- [ ] 全文无"不是…而是…"、无空泛比喻、无 AI 腔总结句
+- [ ] 分析段逻辑连贯，每句有明确因果/并列关系
+- [ ] 数字全部来自原文，标注了 HN 的 points/comments；无编造
+- [ ] 头条选的是有实质内容的帖子（结合分数和评论数判断，不盲从 rank 1）
+- [ ] 标题党/存疑传闻已剔除
+- [ ] 一周回顾放在最后，基于一周窗口（`--after` 一周前日期）的数据
+- [ ] 未读条目已全部 `mark --status read`，footer 注明
+- [ ] HTML 标签配对（`<div>`、`<span>`、`<b>`、`<h3>` 等 open==close），自包含无外部资源
+- [ ] footer 注明数据来源与窗口
+- [ ] 已推送至 b:~/base/NGPM/data/briefing/，两端 MD5 一致
+- [ ] 远端无多余软链接，`index.html` 软链接指向最新一篇
+---
+
+## 7. 常见问题
+
+| 问题 | 处理 |
+|---|---|
+| `--after 2d` 返回 0 条 | 改用绝对日期 `--after YYYY-MM-DD` |
+| 漏掉已读消息 | 必须带 `--status read,unread` |
+| 不知道哪些是深度文章 | 按 feed 分组统计，快讯看标题、深度读正文 |
+| rank 1 分数很低且无正文 | 选 rank 2+ 有实质内容的帖子当头条 |
+| 头条正文抓取失败 | 用标题+评论数写，注明"正文未能抓取"，不编造 |
+| 用户说"太 AI 了" | 检查：是否用了"不是…而是…"、比喻、跳跃式总结句；改为平实因果陈述 |
+| 远端 index.html 指向旧的/缺失 | 先 `find -type l -delete` 清掉所有软链接，再 `ln -sf 最新文件 index.html` |
+| 不确定是否推送成功 | 对比两端 MD5 + `ls -la` 看软链接；文件大小与本地一致即成功 |
+---
+
+## 8. 交付
+
+- 文件放在工作目录：`briefing-YYYY-MM-DD.html`
+- 完成后向用户简述：① 结构（几个主题+回顾）② 头条选择理由 ③ 已读标记情况 ④ 剔除的存疑内容 ⑤ 可选的调整项（版式/长度/导出 Markdown）
+
+### 8.1 发布到远端（每次运行必做）
+
+生成并确认质量后，将简报推送到服务器 b（`~/.ssh/config` 中已配置 `Host b`：`b.limour.top:20022`，User root），并保证远端 `index.html` 始终指向最新一篇：
+
+```bash
+# 1) 推送当天文件（远端目录不存在会自动创建）
+scp briefing-YYYY-MM-DD.html b:~/base/NGPM/data/briefing/
+
+# 2) 清理远端可能的软链接（历史遗留/误建，一律删掉）
+# 3) 将最新一篇软链接为 index.html（旧文件保留，只是不再被链接）
+ssh b "cd ~/base/NGPM/data/briefing && find . -maxdepth 1 -type l -delete && ln -sf briefing-YYYY-MM-DD.html index.html"
+
+# 4) 校验：两端 MD5 一致 + 远端软链接正确
+md5sum briefing-YYYY-MM-DD.html
+ssh b "cd ~/base/NGPM/data/briefing && ls -la && md5sum briefing-YYYY-MM-DD.html"
+```
+
+**要点（用户明确要求）：**
+- 远端只保留一条软链接 `index.html`（指向最新），**不存在其他软链接**。
+- 历史简报文件全部保留在目录里，只是不再被 `index.html` 指向（`ln -sf` 会先删旧链接再建新的）。
+- 用 `find -type l -delete` 兜底清理，防止目录里混入意外软链接。
+- 推送后必须核对 `ls -la` 结果与两端 MD5，确认传输完整、链接指向正确。
