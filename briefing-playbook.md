@@ -10,8 +10,7 @@
 
 > "总结我订阅最近两天的消息，结合 HN 简报，生成一份简报 HTML 以便发布。"
 
-交付物：**一个自包含、可直接发布的 HTML 文件**（内联 CSS，无外部依赖），命名如 `briefing-YYYY-MM-DD.html`。
-
+交付物：**一个自包含、可直接发布的 HTML 文件**（内联 CSS，无外部依赖），命名如 `briefing-YYYY-MM-DD.html`，**放在 `briefing-playbook/` 文件夹下**（与 playbook 同名的文件夹）。
 发布：每次生成后推送到服务器 b 的 `~/base/NGPM/data/briefing/`，远端 `index.html` 软链接始终指向最新一篇（详见 §8.1）。
 
 ---
@@ -261,7 +260,7 @@ miniflux mark <id1> <id2> ... --status read
 
 ## 8. 交付
 
-- 文件放在工作目录：`briefing-YYYY-MM-DD.html`
+- 文件放在 `briefing-playbook/` 文件夹（与 playbook 同名）下：`briefing-playbook/briefing-YYYY-MM-DD.html`
 - 完成后向用户简述：① 结构（几个主题+回顾）② 头条选择理由 ③ 已读标记情况 ④ 剔除的存疑内容 ⑤ 可选的调整项（版式/长度/导出 Markdown）
 
 ### 8.1 发布到远端（每次运行必做）
@@ -270,14 +269,14 @@ miniflux mark <id1> <id2> ... --status read
 
 ```bash
 # 1) 推送当天文件（远端目录不存在会自动创建）
-scp briefing-YYYY-MM-DD.html b:~/base/NGPM/data/briefing/
+scp -pr briefing-playbook/briefing-YYYY-MM-DD.html b:~/base/NGPM/data/briefing/
 
 # 2) 清理远端可能的软链接（历史遗留/误建，一律删掉）
 # 3) 将最新一篇软链接为 index.html（旧文件保留，只是不再被链接）
 ssh b "cd ~/base/NGPM/data/briefing && find . -maxdepth 1 -type l -delete && ln -sf briefing-YYYY-MM-DD.html index.html"
 
 # 4) 校验：两端 MD5 一致 + 远端软链接正确
-md5sum briefing-YYYY-MM-DD.html
+md5sum briefing-playbook/briefing-YYYY-MM-DD.html
 ssh b "cd ~/base/NGPM/data/briefing && ls -la && md5sum briefing-YYYY-MM-DD.html"
 ```
 
