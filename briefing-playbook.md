@@ -94,7 +94,7 @@ miniflux entry <id>    # 单篇全文（HTML），用正则去标签
 miniflux mark <id1> <id2> ... --status read
 ```
 
-- **只标窗口内 unread 的 id**：从拉取数据里筛 `status == 'unread'` 的 id，直接 `miniflux mark <id...> --status read`（实测 40 条左右一条 argv 即可，输出 `Marked N entries as read` 即成功）。
+- **只标窗口内 unread 的 id**：从拉取数据里筛 `status == 'unread'` 的 id，直接 `miniflux mark <id...> --status read`（实测 124 条一条 argv 也没问题，输出 `Marked N entries as read` 即成功）。
 - **不要用 `mark --all`**：会误标窗口外的旧未读；仅在确认无窗口外未读时才可考虑。
 - 数量极大（几百条）时先 `--dry-run` 预览，再决定分批或 `--yes`。
 - **标记前重新拉一次最新数据**：写作期间快讯 feed（金十等）会不断进新条目，直接用第一次拉的 id 清单会漏标；footer 的“已读 N 条”以本次实际 `Marked N` 的 N 为准。
@@ -270,14 +270,16 @@ miniflux mark <id1> <id2> ... --status read
 | 窗口内条目 > 200（如 328 条） | `--offset 200 --limit 200` 再查一次，两次结果合并 |
 | `--compact` 里 feed 不是字符串 | feed 是嵌套对象，用 `e['feed']['title']`（别当成字符串 `.get('title')` 会报错） |
 | 漏掉已读消息 | 必须带 `--status read,unread` |
-| HN 正文抓取失败 | leanrada / energy.gov / bloomberg / guardian 等常失败返回空，退回标题+评论数写，不编造 |
+| HN 正文抓取失败 | leanrada / energy.gov / bloomberg / guardian / techcrunch 等常失败返回空或只有导航外壳，退回标题+评论数写，不编造 |
 | 不知道哪些是深度文章 | 按 feed 分组统计，快讯看标题、深度读正文 |
 | rank 1 分数很低且无正文 | 选 rank 2+ 有实质内容的帖子当头条（如 8/9 头条 rank 54、772 分） |
+| 跨天重跑，HN 榜单几乎不变 | 头条先排除昨天已写过/已当过头条的帖子（如 8/9 头条 DeepSeek V4 Flash、Noema、丹麦答辩等今天仍在榜），从昨天未覆盖的新帖里按分数+评论数+正文可抓取性选（8/10 选 Windows 天气 266 分/218 评论） |
 | 头条正文抓取失败 | 用标题+评论数写，注明"正文未能抓取"，不编造 |
 | 用户说"太 AI 了" | 检查：是否用了"不是…而是…"、比喻、跳跃式总结句；改为平实因果陈述 |
 | 远端 index.html 指向旧的/缺失 | 先 `find -type l -delete` 清掉所有软链接，再 `ln -sf 最新文件 index.html` |
 | 不确定是否推送成功 | 对比两端 MD5 + `ls -la` 看软链接；文件大小与本地一致即成功 |
 | 当天已有同日期 `briefing-YYYY-MM-DD.html` / cron 正在跑 | 先看 `briefing-playbook/` 成品时间戳、`run-YYYY-MM-DD.log`、`ps aux | grep run-briefing`；同名文件会被后写者覆盖，手动会话不持 flock、可与 cron 并行 → 推送后在其结束后再核一次远端 MD5，被覆盖就重推 |
+| cron 日志只有 header 无产出 | `run-YYYY-MM-DD.log` 只有开始行、无后续输出、`ps` 无 run-briefing 进程、lock 文件为空 → cron 启动即失败（8/10 实测 06:00 启动后无任何产出），可放心手动执行；手动 scp 会覆盖 cron 可能留下的同名空文件，推送后再核一次 MD5 即可 |
 | 一周窗口条目太多，`--limit 200` 看不到早期数据 | `--limit` 只回最新 N 条，必须 `--offset 200/400` 分页才能看到窗口早期（8/9 实测一周 total 1021） |
 | 质量检查脚本打印的 `len(html)` | 是字符数不是 UTF-8 字节数（8/9 实测 12760 字符 ≈ 23354 字节），与 scp 的文件大小对比时别误读 |
 ---
