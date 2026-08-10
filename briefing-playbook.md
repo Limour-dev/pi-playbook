@@ -94,7 +94,7 @@ miniflux entry <id>    # 单篇全文（HTML），用正则去标签
 miniflux mark <id1> <id2> ... --status read
 ```
 
-- **只标窗口内 unread 的 id**：从拉取数据里筛 `status == 'unread'` 的 id，直接 `miniflux mark <id...> --status read`（实测 124 条一条 argv 也没问题，输出 `Marked N entries as read` 即成功）。
+- **只标窗口内 unread 的 id**：从拉取数据里筛 `status == 'unread'` 的 id，直接 `miniflux mark <id...> --status read`（实测一条 argv 里放 124、乃至 628 条 id 都没问题，输出 `Marked N entries as read` 即成功）。
 - **不要用 `mark --all`**：会误标窗口外的旧未读；仅在确认无窗口外未读时才可考虑。
 - 数量极大（几百条）时先 `--dry-run` 预览，再决定分批或 `--yes`。
 - **标记前重新拉一次最新数据**：写作期间快讯 feed（金十等）会不断进新条目，直接用第一次拉的 id 清单会漏标；footer 的“已读 N 条”以本次实际 `Marked N` 的 N 为准。
@@ -133,7 +133,7 @@ miniflux mark <id1> <id2> ... --status read
 
 **分析段（card）要求：**
 - 逻辑连贯，**不要跳跃**：句与句、段与段之间要有明确的因果或并列关系词（"原因是…""针对的是…""反映的是…"）。
-- **禁止"不是…而是…"句式**以及任何空泛对比（"正把物尽其用逼成新的理性"是反面例子）。
+- **禁止"不是…而是…"句式**（含"无…而是…"等变体，如"无线下丢给云端、而是在端侧跑推理"就是反面例子）以及任何空泛对比（"正把物尽其用逼成新的理性"是反面例子）。
 - 直接陈述事实 + 数字（`<span class="num">` 高亮关键数字）。
 - 可读正文后给 1–2 个硬事实，绝不编造。
 
