@@ -274,6 +274,7 @@ miniflux mark <id1> <id2> ... --status read
 | 不知道哪些是深度文章 | 按 feed 分组统计，快讯看标题、深度读正文 |
 | rank 1 分数很低且无正文 | 选 rank 2+ 有实质内容的帖子当头条（如 8/9 头条 rank 54、772 分） |
 | 跨天重跑，HN 榜单几乎不变 | 头条先排除昨天已写过/已当过头条的帖子（如 8/9 头条 DeepSeek V4 Flash、Noema、丹麦答辩等今天仍在榜），从昨天未覆盖的新帖里按分数+评论数+正文可抓取性选（8/10 选 Windows 天气 266 分/218 评论） |
+| 同一 HN 帖标题被改写/分数继续涨 | HN 会自动改写帖标题（8/16 数学论文从 "AI Isn't Outthinking Mathematicians…" 变为 "AI has access to a vastly larger working memory…"，分数 317→320、评论 274→277）；跨天旧帖分数可大涨（Firefox/uBlock 帖 77→1635 分）。按 URL/内容识别同一帖，引用时一律用最新一次拉取的 points/comments |
 | 头条正文抓取失败 | 用标题+评论数写，注明"正文未能抓取"，不编造；若订阅源有对应中文报道（8/15 智谱 GLM-5.3 的 z.ai 抓取失败、Qwen3.8 的 HuggingFace 模型卡正文被导航/模板淹没），改用 miniflux 订阅正文补硬数据（基准分、参数、价格），头条仍标注 HN points/comments |
 | 用户说"太 AI 了" | 检查：是否用了"不是…而是…"、比喻、跳跃式总结句；改为平实因果陈述 |
 | 远端 index.html 指向旧的/缺失 | 先 `find -type l -delete` 清掉所有软链接，再 `ln -sf 最新文件 index.html` |
@@ -283,7 +284,8 @@ miniflux mark <id1> <id2> ... --status read
 | 一周窗口条目太多，`--limit 200` 看不到早期数据 | `--limit` 只回最新 N 条，必须按 total 分页（8/9 一周 total 1021 → offset 400 够；8/12 已涨到 2098 → offset 分页到 1800 共 10 页）才能看到窗口早期 |
 | 两天窗口 `total` 上千（8/12 实测 1252），只拉前 400 条只有最近 15 小时 | 两天窗口也按 total 分页（offset 0–1200 共 7 页）拉全；标已读前务必拉全窗口再取 unread 并集，否则漏标 |
 | 质量检查脚本打印的 `len(html)` | 是字符数不是 UTF-8 字节数（8/9 实测 12760 字符 ≈ 23354 字节），与 scp 的文件大小对比时别误读 |
-| 分页拉取时个别页偶发 `Network error ... fetch failed`（8/13 实测 offset 200/1000/1200/1400 各失败一次） | 属瞬时网络错误，重试即可；批量拉页时先判空再重试（`python3 -c "json.load(...)['entries']"` 检查），不必整窗重来；标已读前仍要重拉一次全窗取 unread 并集 |
+| 分页拉取时个别页偶发 `Network error ... fetch failed`（8/13 实测 offset 200/1000/1200/1400 各失败一次） | 属瞬时网络错误，重试即可；批量拉页时先判空再重试（判空要判断 entries 非空，`json.load` 对空列表也会通过，否则空页不会触发重试），不必整窗重来；标已读前仍要重拉一次全窗取 unread 并集 |
+| 分页期间快讯 feed 持续进新条目导致 offset 错位漏页（8/16 实测） | 先以 `--limit 1` 探 total 再分页时，paging 期间 total 从 3821 涨到约 4020，offset 200 起就漏掉了最新约 199 条；可把两天窗口数据（覆盖新尾部）与一周数据按 id 合并去重补齐，不必重拉整窗 |
 ---
 
 ## 8. 交付
