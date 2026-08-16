@@ -49,7 +49,7 @@ miniflux entries --status read,unread --after <绝对日期> --order published_a
 1. **不要用相对时间 `--after 2d`**——实测返回 0 结果，有 bug。一律用绝对 ISO 日期：`--after 2026-08-07`（今天减 2 天）。
 2. **必须带 `--status read,unread`**——否则默认只查 unread，会漏掉昨天已读的消息。
 3. **不要用 `--fields`**——它会丢掉 feed 信息（feed 变成 `?`），无法按订阅源筛选。要精简用 `--compact`。
-4. 数量大时分页：`--offset 200 --limit 200` 再查一次。**两天窗口可能高达 1200+ 条（8/12 实测 total 1252）**：`total` 是窗口内全部条目（含已读），必须 offset 分页到 1200（共 7 页）才能覆盖完整两天；只拉前 400 条只覆盖最近约 15 小时（8/12 实测前 400 条从 08-11T14:47 起），会漏掉 08-10 整天与 08-11 早段。标已读前务必拉全窗口再取 unread 并集。
+4. 数量大时分页：`--offset 200 --limit 200` 再查一次。**两天窗口总量波动大，先探 total 再分页**（8/12 实测 total 1252、7 页；8/17 实测 576、3 页）：`total` 是窗口内全部条目（含已读），必须 offset 分页到 total 为止才能覆盖完整两天；只拉前 400 条只覆盖最近约 15 小时（8/12 实测前 400 条从 08-11T14:47 起），会漏掉 08-10 整天与 08-11 早段。标已读前务必拉全窗口再取 unread 并集。
 5. 条目超过 200 时，先按 feed 统计分布（`collections.Counter`），心里有数再读正文。
 
 ### 2.2 HN 数据
@@ -83,7 +83,7 @@ miniflux entry <id>    # 单篇全文（HTML），用正则去标签
 ### 2.4 一周回顾的数据
 
 一周回顾需要 `--after <一周前日期>` 再拉一次（如 `--after 2026-08-02`），重点看深度 feed 在 8 天窗口内的主线（模型发布、安全事件、组织变动、硬件动向、科研进展（Nature/MIT 科技评论）），同时扫一遍地缘（战争/贸易）与国内批判（司法/信访/科研伦理）的周度主线。
-**注意（实测）**：`--limit 200` 只返回窗口内**最新**的 200 条，要看到 8 天窗口里较早的条目必须继续 offset 分页，否则一周回顾会漏掉前半周的主线。窗口总量每天都在涨：8/9 实测 total 1021（offset 到 400 即可），8/12 实测 total 2098，offset 分页到 1800（共 10 页）才覆盖到 08-05，8/14 实测 total 3105，offset 分页到 3000（共 16 页）才覆盖到 08-07。分页到最早日期为止（页数≈total/200），再按 feed 分组扫主线。
+**注意（实测）**：`--limit 200` 只返回窗口内**最新**的 200 条，要看到 8 天窗口里较早的条目必须继续 offset 分页，否则一周回顾会漏掉前半周的主线。窗口总量每天都在涨：8/9 实测 total 1021（offset 到 400 即可），8/12 实测 total 2098，offset 分页到 1800（共 10 页）才覆盖到 08-05，8/14 实测 total 3105，offset 分页到 3000（共 16 页）才覆盖到 08-07，8/17 实测 total 3810，offset 分页到 3800（共 20 页）才覆盖到 08-10T08:15。分页到最早日期为止（页数≈total/200），再按 feed 分组扫主线。
 
 ---
 
@@ -271,7 +271,7 @@ miniflux mark <id1> <id2> ... --status read
 | 窗口内条目 > 200（如 328 条） | `--offset 200 --limit 200` 再查一次，两次结果合并 |
 | `--compact` 里 feed 不是字符串 | feed 是嵌套对象，用 `e['feed']['title']`（别当成字符串 `.get('title')` 会报错） |
 | 漏掉已读消息 | 必须带 `--status read,unread` |
-| HN 正文抓取失败 | leanrada / energy.gov / bloomberg / guardian / techcrunch 等常失败返回空或只有导航外壳，退回标题+评论数写，不编造；thewalrus.ca 等站点正文前有大量导航壳，用 `text.find(标题关键词)` 定位正文起点再截取（8/12 实测可用） |
+| HN 正文抓取失败 | leanrada / energy.gov / bloomberg / guardian / techcrunch 等常失败返回空或只有导航外壳，退回标题+评论数写，不编造；thewalrus.ca 等站点正文前有大量导航壳，用 `text.find(标题关键词)` 定位正文起点再截取（8/12 实测可用）。8/17 新坑：platform.claude.com（Claude 系统提示词页）返回 region-unavailable 导航壳（LEN 13831 全为导航）；wiley（alz-journals）403、newscientist 406、hindawi 403 等出版社反爬；mun-logadan.github.io（Opus 5 帖）可正常抓取、severe-weather.eu 用 find 定位正文（IDX 489 起） |
 | 不知道哪些是深度文章 | 按 feed 分组统计，快讯看标题、深度读正文 |
 | rank 1 分数很低且无正文 | 选 rank 2+ 有实质内容的帖子当头条（如 8/9 头条 rank 54、772 分） |
 | 跨天重跑，HN 榜单几乎不变 | 头条先排除昨天已写过/已当过头条的帖子（如 8/9 头条 DeepSeek V4 Flash、Noema、丹麦答辩等今天仍在榜），从昨天未覆盖的新帖里按分数+评论数+正文可抓取性选（8/10 选 Windows 天气 266 分/218 评论） |
@@ -281,8 +281,8 @@ miniflux mark <id1> <id2> ... --status read
 | 远端 index.html 指向旧的/缺失 | 先 `find -type l -delete` 清掉所有软链接，再 `ln -sf 最新文件 index.html` |
 | 不确定是否推送成功 | 对比两端 MD5 + `ls -la` 看软链接；文件大小与本地一致即成功 |
 | 当天已有同日期 `briefing-YYYY-MM-DD.html` / cron 正在跑 | 先看 `briefing-playbook/` 成品时间戳、`run-YYYY-MM-DD.log`、`ps aux | grep run-briefing`；同名文件会被后写者覆盖，手动会话不持 flock、可与 cron 并行 → 推送后在其结束后再核一次远端 MD5，被覆盖就重推 |
-| cron 日志只有 header 无产出 | `run-YYYY-MM-DD.log` 只有开始行、无后续输出、`ps` 无 run-briefing 进程、lock 文件为空 → cron 启动即失败（8/10 实测 06:00 启动后无任何产出），可放心手动执行；手动 scp 会覆盖 cron 可能留下的同名空文件，推送后再核一次 MD5 即可 |
-| 一周窗口条目太多，`--limit 200` 看不到早期数据 | `--limit` 只回最新 N 条，必须按 total 分页（8/9 一周 total 1021 → offset 400 够；8/12 已涨到 2098 → offset 分页到 1800 共 10 页）才能看到窗口早期 |
+| cron 日志只有 header 无产出 | `run-YYYY-MM-DD.log` 只有开始行、无后续输出、`ps` 无 run-briefing 进程、lock 文件为空 → cron 启动即失败（8/10、8/17 两次实测 06:00 启动后无任何产出），可放心手动执行；手动 scp 会覆盖 cron 可能留下的同名空文件，推送后再核一次 MD5 即可 |
+| 同一订阅事件跨天状态反转（如 8/16→8/17 卡塔尔-伊朗飞行员：昨天金十"卡塔尔否认拘留、发现遗骸"，今天伊朗声称"抓获扣押 3 名飞行员"并要求派调查团） | 写作前先读昨天简报对应段落，把反转写成"同一事件的最新一轮交锋"并给双方说法，不照抄昨天的表述；地缘事件尤其要核对最新拉取 |
 | 两天窗口 `total` 上千（8/12 实测 1252），只拉前 400 条只有最近 15 小时 | 两天窗口也按 total 分页（offset 0–1200 共 7 页）拉全；标已读前务必拉全窗口再取 unread 并集，否则漏标 |
 | 质量检查脚本打印的 `len(html)` | 是字符数不是 UTF-8 字节数（8/9 实测 12760 字符 ≈ 23354 字节），与 scp 的文件大小对比时别误读 |
 | 分页拉取时个别页偶发 `Network error ... fetch failed`（8/13 实测 offset 200/1000/1200/1400 各失败一次） | 属瞬时网络错误，重试即可；批量拉页时先判空再重试（判空要判断 entries 非空，`json.load` 对空列表也会通过，否则空页不会触发重试），不必整窗重来；标已读前仍要重拉一次全窗取 unread 并集 |
