@@ -19,19 +19,20 @@
 
 ## 1. 环境准备
 
-两个技能是唯一入口，都在 `/home/limour/.pi/agent/skills/` 下：
+两个技能是唯一入口，都在项目级 `.pi/skills/` 目录下（即 `/home/limour/pi-playbook/.pi/skills/`，**不再全局暴露**——只有在本项目目录内运行的 agent 才会加载它们，其他目录的 agent 看不到）：
 
 ```bash
-export PATH="/home/limour/.pi/agent/skills/miniflux/bin:$PATH"
-export PATH="/home/limour/.pi/agent/skills/hn-briefing/bin:$PATH"
+export PATH="/home/limour/pi-playbook/.pi/skills/miniflux/bin:$PATH"
+export PATH="/home/limour/pi-playbook/.pi/skills/hn-briefing/bin:$PATH"
 
 miniflux healthcheck          # 应输出 healthy
 miniflux me                   # 当前用户
 ```
 
-- 首次执行前**先读两个技能的 SKILL.md**（`miniflux/SKILL.md`、`hn-briefing/SKILL.md`），它们描述了全部命令。
+- 首次执行前**先读两个技能的 SKILL.md**（`.pi/skills/miniflux/SKILL.md`、`.pi/skills/hn-briefing/SKILL.md`），它们描述了全部命令。
 - 所有命令输出 JSON 到 stdout。
 
+- **项目信任（重要）**：项目技能只有在本项目被信任后才会被发现（`.pi/skills/` 属于项目级资源）。交互模式启动时会询问是否信任本目录，可用 `/trust` 保存决定（之后重启 pi 生效）；非交互 `-p` 模式默认不信任，需加 `--approve`。`run-briefing.sh` 用 `--no-skills --skill <绝对路径>` 显式加载两个技能，**不受信任门控影响**（已实测）。
 ---
 
 ## 2. 数据获取
@@ -333,7 +334,7 @@ cd /home/limour/pi-playbook && git add briefing-playbook.md && git commit -m "do
 ### 9.1 拉取两天窗口数据 + 分页 + 按 feed 统计
 
 ```bash
-export PATH="/home/limour/.pi/agent/skills/miniflux/bin:$PATH"
+export PATH="/home/limour/pi-playbook/.pi/skills/miniflux/bin:$PATH"
 miniflux entries --status read,unread --after <今天减2天> --order published_at --direction desc --limit 200 --compact > /tmp/mf1.json
 miniflux entries --status read,unread --after <今天减2天> --order published_at --direction desc --limit 200 --offset 200 --compact > /tmp/mf2.json
 ```
