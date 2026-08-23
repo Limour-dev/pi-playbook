@@ -290,7 +290,7 @@ miniflux mark <id1> <id2> ... --status read
 | 质量检查漏掉"不是新模型，而是'信任'"这类一般形式（8/18 实测，字面 `'不是…而是…' not in html` 查不到） | §9.4 需加正则 `不是[^，。；]{0,14}[，,][^。；]{0,14}而是`，覆盖"不是 X，而是 Y"（含引号/破折号变体） |
 | offset 超出 total 的分页返回空 entries（8/19 实测 7 天窗口 total 3797、offset 3800 返回空并触发 5 次重试） | 空页是正常终点：先用 `--limit 1` 探 total、只拉 `range(0,total,200)`，或把空页判定为正常结束而非网络错误，避免白白重试 |
 | 凌晨 06:00 快讯 feed 不活跃，两次拉取 total 稳定（8/18 实测两天窗口 932=932、8/19 实测 1271=1271） | 首次拉取即可覆盖全窗，标已读前仍按惯例重拉一次取 unread 并集；白天执行才需防 offset 漂移。跨日 total 波动大（8/18 932 vs 8/19 1271），但同一次运行内首拉与重拉一致 |
-| `hn-briefing top` 偶发 `error: fetch failed`（8/20 实测，此时 curl 直连 HN API 返回 200、node 单测 fetch 也正常） | 瞬时网络错误，直接重试 `hn-briefing top 100` 即可（8/20 实测重试一次成功）；若反复失败再用 curl 验证 HN API 连通性，排除 CLI 本身问题 |
+| `hn-briefing top` 偶发 `error: fetch failed`（8/20 实测，此时 curl 直连 HN API 返回 200、node 单测 fetch 也正常） | 瞬时网络错误，直接重试 `hn-briefing top 100` 即可（8/20 实测重试一次成功）；若反复失败再用 curl 验证 HN API 连通性，排除 CLI 本身问题。8/24 实测更严重情形：CLI 连败 8 次、每次都是 `Connect Timeout Error (10s)` 连到 34.120.206.254:443，而 curl/node 单测 fetch 正常（间歇性连接超时）；此时放弃 CLI 重试，直接用自写 node 脚本拉取——每请求最多 5 次重试（间隔 1.5s 递增）、AbortSignal 15s 超时、8 并发，输出结构与 CLI 一致（rank/title/score/descendants/url/by/time），一次成功 |
 | "SpaceX 收购 Cursor" 此前被当离谱传闻剔除（AI 聚合首发），8/20 实测金十 Plus 精选图表（"豪掷600亿美元买下Cursor"）与风向旗（"SpaceX旗下公司Cursor推出代码托管平台"）均按事实报道 | 该传闻已获多源交叉印证，不再是纯谣言；但写简报仍以官方/权威信源为准，且 8/19 已写过 Cursor Origin 上线，跨天榜单旧帖不重复写 |
 | scp/ssh 偶发 `Connection closed by remote host`（公钥验证后即断，8/22 连续 2 次失败，第三次 verbose scp 成功传输、双端 MD5 一致；期间 ping 正常、端口 20022 可连、密钥交换正常） | 属服务器侧瞬时连接问题（疑连接数限制/fail2ban），等几秒重试即可；发布以双端 MD5 一致为准，不必因一次失败就停下报告整轮失败 |
 ---
