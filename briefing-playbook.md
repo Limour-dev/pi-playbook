@@ -59,7 +59,7 @@ hn-briefing top 100 > /tmp/hn_top.json
 hn-briefing content "<url>"    # 抓取头条正文，返回 {title, text}
 ```
 
-- **头条选择**：默认取 rank 1，但 rank 1 常是刚发布、分数很低（如 42 分）的帖子，无实质正文。此时**结合分数与评论数**选 rank 2 或更高的成熟帖子（如 282 分/106 评论），并在简报中说明。同日重跑时 HN 榜单几乎不变，同一篇有实质内容的帖子可继续当头条，但 points/comments 要用**最新拉取值**（实测 772→775）。高分也不等于适合当头条：8/19 分数最高的 AI;DR（1054 分）让位给以色列假智库帖（1004 分/681 评论），后者跨地缘政治与 AI 信息战两条主线、正文可抓取、实质更重，选头条以实质内容优先而非纯分数。**优先选与订阅可交叉印证的新帖**：8/22 HN《AI companies destroy physical books》（472 分/822 评论，Anna's Archive）与订阅同日报出的"Anthropic 与 Amazon 购书扫描训练 AI"（AI 聚合）完全对应，双向引用后头条摘要更实。
+- **头条选择**：默认取 rank 1，但 rank 1 常是刚发布、分数很低（如 42 分）的帖子，无实质正文。此时**结合分数与评论数**选 rank 2 或更高的成熟帖子（如 282 分/106 评论），并在简报中说明。同日重跑时 HN 榜单几乎不变，同一篇有实质内容的帖子可继续当头条，但 points/comments 要用**最新拉取值**（实测 772→775）。高分也不等于适合当头条：8/19 分数最高的 AI;DR（1054 分）让位给以色列假智库帖（1004 分/681 评论），后者跨地缘政治与 AI 信息战两条主线、正文可抓取、实质更重，选头条以实质内容优先而非纯分数。**优先选与订阅可交叉印证的新帖**：8/22 HN《AI companies destroy physical books》（472 分/822 评论，Anna's Archive）与订阅同日报出的"Anthropic 与 Amazon 购书扫描训练 AI"（AI 聚合）完全对应，双向引用后头条摘要更实；8/25 HN rank 1《Xiaomi: New CPU matches Apple cores…》（637 分/429 评论，Daniel Lemire 的 X 帖）与订阅同日金十/风向旗/联合早报的"小米玄戒 O3/D100"发布（3nm、240 亿晶体管、小米 18 Fold 9 月首发、据报台积电代工）完全对应，定为头条且正文可直接抓取（twitter.com 帖可抓）。
 - 正文抓取可能失败（付费墙/反爬），失败时退回标题 + 常识，**不要编造内容**。
 
 ### 2.3 阅读正文的策略
@@ -276,6 +276,8 @@ miniflux mark <id1> <id2> ... --status read
 | rank 1 分数很低且无正文 | 选 rank 2+ 有实质内容的帖子当头条（如 8/9 头条 rank 54、772 分） |
 | 跨天重跑，HN 榜单几乎不变 | 头条先排除昨天已写过/已当过头条的帖子（如 8/9 头条 DeepSeek V4 Flash、Noema、丹麦答辩等今天仍在榜），从昨天未覆盖的新帖里按分数+评论数+正文可抓取性选（8/10 选 Windows 天气 266 分/218 评论） |
 | 同一 HN 帖标题被改写/分数继续涨 | HN 会自动改写帖标题（8/16 数学论文从 "AI Isn't Outthinking Mathematicians…" 变为 "AI has access to a vastly larger working memory…"，分数 317→320、评论 274→277）；跨天旧帖分数可大涨（Firefox/uBlock 帖 77→1635 分）。按 URL/内容识别同一帖，引用时一律用最新一次拉取的 points/comments |
+| HN 榜单日内也会变动（同一天两次 `top 100`，8/25 实测 rank 5/6/7 互换、多处 rank ±1，points 微涨如 635→637/938→942） | 按标题+URL 识别同一帖、用最后一次拉取的 points/comments，rank 号仅作参考；同一次运行内开头选好的头条若分数变化，写简报前再拉一次取最新值 |
+| AI 聚合"牛来大模型 Ox Alpha 登顶"（8/24 多条，与《牛来》电影同名的梗/传闻） | 未获其他信源印证，按存疑内容剔除、不写；可写的是真实事件《牛来》电影票房（联合早报：上映 19 天破 4200 万/观影 150 万/IMDb 6.5/新作《羊高》）|
 | 头条正文抓取失败 | 用标题+评论数写，注明"正文未能抓取"，不编造；若订阅源有对应中文报道（8/15 智谱 GLM-5.3 的 z.ai 抓取失败、Qwen3.8 的 HuggingFace 模型卡正文被导航/模板淹没），改用 miniflux 订阅正文补硬数据（基准分、参数、价格），头条仍标注 HN points/comments |
 | 用户说"太 AI 了" | 检查：是否用了"不是…而是…"、比喻、跳跃式总结句；改为平实因果陈述 |
 | 远端 index.html 指向旧的/缺失 | 先 `find -type l -delete` 清掉所有软链接，再 `ln -sf 最新文件 index.html` |
@@ -394,6 +396,10 @@ for bad in ['不是…而是…', '硬币的两面', '把镜头拉远']:
     assert bad not in html, bad
 assert not re.findall(r'不是[^，。；\n]{0,14}[，,][^。；\n]{0,14}而是', html), '不是X，而是Y 句式！'
 assert not re.findall(r'https?://[^"]+', html), '外部资源！'
+# 引入段(plain)不得出现数字（允许一周回顾的日期窗口如"8 月 18 日至 25 日"）
+for m in re.finditer(r'<div class="plain">(.*?)</div>', html, re.S):
+    txt = re.sub(r'\d+ 月 \d+ 日至 \d+ 日', '', m.group(1))
+    assert not re.findall(r'\d', txt), f'plain 含数字: {m.group(1)[:50]}'
 print('OK')
 ```
 
