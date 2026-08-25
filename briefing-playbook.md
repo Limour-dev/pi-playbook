@@ -49,7 +49,7 @@ miniflux entries --status read,unread --after <绝对日期> --order published_a
 1. **不要用相对时间 `--after 2d`**——实测返回 0 结果，有 bug。一律用绝对 ISO 日期：`--after 2026-08-07`（今天减 2 天）。
 2. **必须带 `--status read,unread`**——否则默认只查 unread，会漏掉昨天已读的消息。
 3. **不要用 `--fields`**——它会丢掉 feed 信息（feed 变成 `?`），无法按订阅源筛选。要精简用 `--compact`。
-4. 数量大时分页：`--offset 200 --limit 200` 再查一次。**两天窗口总量波动大，先探 total 再分页**（8/12 实测 total 1252、7 页；8/17 实测 576、3 页）：`total` 是窗口内全部条目（含已读），必须 offset 分页到 total 为止才能覆盖完整两天；只拉前 400 条只覆盖最近约 15 小时（8/12 实测前 400 条从 08-11T14:47 起），会漏掉 08-10 整天与 08-11 早段。标已读前务必拉全窗口再取 unread 并集。
+4. **先探 total 再按 total 分页**（总量波动大，实测 576–1252 不等）：`total` 是窗口内全部条目（含已读），只拉前 400 条只覆盖最近约 15 小时、会漏掉窗口早段。标已读前务必拉全窗口再取 unread 并集。
 5. 条目超过 200 时，先按 feed 统计分布（`collections.Counter`），心里有数再读正文。
 
 ### 2.2 HN 数据
@@ -59,7 +59,7 @@ hn-briefing top 100 > /tmp/hn_top.json
 hn-briefing content "<url>"    # 抓取头条正文，返回 {title, text}
 ```
 
-- **头条选择**：默认取 rank 1，但 rank 1 常是刚发布、分数很低（如 42 分）的帖子，无实质正文。此时**结合分数与评论数**选 rank 2 或更高的成熟帖子（如 282 分/106 评论），并在简报中说明。同日重跑时 HN 榜单几乎不变，同一篇有实质内容的帖子可继续当头条，但 points/comments 要用**最新拉取值**（实测 772→775）。高分也不等于适合当头条：8/19 分数最高的 AI;DR（1054 分）让位给以色列假智库帖（1004 分/681 评论），后者跨地缘政治与 AI 信息战两条主线、正文可抓取、实质更重，选头条以实质内容优先而非纯分数。**优先选与订阅可交叉印证的新帖**：8/22 HN《AI companies destroy physical books》（472 分/822 评论，Anna's Archive）与订阅同日报出的"Anthropic 与 Amazon 购书扫描训练 AI"（AI 聚合）完全对应，双向引用后头条摘要更实；8/25 HN rank 1《Xiaomi: New CPU matches Apple cores…》（637 分/429 评论，Daniel Lemire 的 X 帖）与订阅同日金十/风向旗/联合早报的"小米玄戒 O3/D100"发布（3nm、240 亿晶体管、小米 18 Fold 9 月首发、据报台积电代工）完全对应，定为头条且正文可直接抓取（twitter.com 帖可抓）。
+- **头条选择**：默认取 rank 1，但 rank 1 常是刚发布、分数很低（如 42 分）的帖子，无实质正文。此时**结合分数与评论数**选 rank 2 或更高的成熟帖子（如 282 分/106 评论），并在简报中说明。**选实质内容优先而非纯分数**（8/19 最高分的 AI;DR 让位给跨地缘政治与 AI 信息战两条主线、正文可抓取的以色列假智库帖）；**优先选与订阅可交叉印证的新帖**（8/22《AI companies destroy physical books》↔ 订阅"Anthropic 购书扫描训练 AI"；8/25 小米玄戒 O3/D100 ↔ HN rank 1，双向引用后头条摘要更实）。同日重跑时 HN 榜单几乎不变，同一篇有实质内容的帖子可继续当头条，但 points/comments 要用**最新拉取值**（实测 772→775）。
 - 正文抓取可能失败（付费墙/反爬），失败时退回标题 + 常识，**不要编造内容**。
 
 ### 2.3 阅读正文的策略
@@ -78,12 +78,12 @@ miniflux entries --status unread --limit 100 --order published_at --direction de
 miniflux entry <id>    # 单篇全文（HTML），用正则去标签
 ```
 
-- **剔除标题党/存疑内容**：AI 聚合频道里离谱的传闻（如"OpenAI 最大预训练模型 Doug 曝光"）不要写进简报；"SpaceX 收购 Cursor" 起初被当传闻剔除，8/20 已获金十 Plus 与风向旗交叉印证（见 §7），以官方消息为准即可。只写可验证的事实。注意：真实存在的人文故事（如"AV 转码"Noa 用 AI 自学编程）不算传闻，可写入人文主题。
+- **剔除标题党/存疑内容**：AI 聚合频道里离谱的传闻（如"OpenAI 最大预训练模型 Doug 曝光"）不要写进简报；"SpaceX 收购 Cursor" 起初被当传闻剔除，8/20 已获金十 Plus 与风向旗交叉印证，以官方消息为准即可。只写可验证的事实。注意：真实存在的人文故事（如"AV 转码"Noa 用 AI 自学编程）不算传闻，可写入人文主题。
 
 ### 2.4 一周回顾的数据
 
 一周回顾需要 `--after <一周前日期>` 再拉一次（如 `--after 2026-08-02`），重点看深度 feed 在 8 天窗口内的主线（模型发布、安全事件、组织变动、硬件动向、科研进展（Nature/MIT 科技评论）），同时扫一遍地缘（战争/贸易）与国内批判（司法/信访/科研伦理）的周度主线。
-**注意（实测）**：`--limit 200` 只返回窗口内**最新**的 200 条，要看到 8 天窗口里较早的条目必须继续 offset 分页，否则一周回顾会漏掉前半周的主线。窗口总量每天都在涨：8/9 实测 total 1021（offset 到 400 即可），8/12 实测 total 2098，offset 分页到 1800（共 10 页）才覆盖到 08-05，8/14 实测 total 3105，offset 分页到 3000（共 16 页）才覆盖到 08-07，8/17 实测 total 3810，offset 分页到 3800（共 20 页）才覆盖到 08-10T08:15，8/18 实测 total 4468，offset 分页到 4400（共 23 页）才覆盖到 08-10T08:00。分页到最早日期为止（页数≈total/200），再按 feed 分组扫主线。
+**注意（实测）**：`--limit 200` 只返回窗口内**最新**的 200 条，必须 offset 分页到最早条目为止（页数 ≈ total/200；窗口总量每天都在涨，8 月实测从约 1k 涨到约 4.5k），否则一周回顾会漏掉前半周主线。分页完成后按 feed 分组扫主线。
 
 ---
 
@@ -95,7 +95,7 @@ miniflux entry <id>    # 单篇全文（HTML），用正则去标签
 miniflux mark <id1> <id2> ... --status read
 ```
 
-- **只标窗口内 unread 的 id**：从拉取数据里筛 `status == 'unread'` 的 id，直接 `miniflux mark <id...> --status read`（实测一条 argv 里放 124、乃至 628 条 id 都没问题，输出 `Marked N entries as read` 即成功）。
+- **只标窗口内 unread 的 id**：从拉取数据里筛 `status == 'unread'` 的 id，直接 `miniflux mark <id...> --status read`（实测一条 argv 可放数百个 id，输出 `Marked N entries as read` 即成功）。
 - **不要用 `mark --all`**：会误标窗口外的旧未读；仅在确认无窗口外未读时才可考虑。
 - 数量极大（几百条）时先 `--dry-run` 预览，再决定分批或 `--yes`。
 - **标记前重新拉一次最新数据**：写作期间快讯 feed（金十等）会不断进新条目，直接用第一次拉的 id 清单会漏标；footer 的“已读 N 条”以本次实际 `Marked N` 的 N 为准。
@@ -237,7 +237,7 @@ miniflux mark <id1> <id2> ... --status read
 </html>
 ```
 
-**常用主题划分（参考，按当天内容调整，科技科研前沿 + 地缘政治 + 人文 + 批判监督各至少一段）**：① AI 军备竞赛与人才洗牌 ② 写代码的人在想什么（程序员职业焦虑）③ 电脑越来越贵（硬件/内存焦虑）④ 科技科研前沿（Nature/MIT 科技评论：生物·医学·物理·能源·太空等硬科学，含 AI 研究本身）⑤ 地缘政治与世界大事（战争/能源/贸易/台海）⑥ 人文与社会（教育/文化/数字生活/社会事件）⑦ 直面批判（社会治理与监督：司法/信访/立法/科研伦理/审查）⑧ 区块链与加密市场（吴说为主：行情/ETF 资金流/链上安全事件/监管与代币化；**用户明确要求必须有**——8/23 曾因遗漏被指出）⑨ 一周回顾。
+**常用主题划分（参考，按当天内容调整，科技科研前沿 + 地缘政治 + 人文 + 批判监督各至少一段）**：① AI 军备竞赛与人才洗牌 ② 写代码的人在想什么（程序员职业焦虑）③ 电脑越来越贵（硬件/内存焦虑）④ 科技科研前沿（Nature/MIT 科技评论：生物·医学·物理·能源·太空等硬科学，含 AI 研究本身）⑤ 地缘政治与世界大事（战争/能源/贸易/台海）⑥ 人文与社会（教育/文化/数字生活/社会事件）⑦ 直面批判（社会治理与监督：司法/信访/立法/科研伦理/审查）⑧ 区块链与加密市场（吴说为主：行情/ETF 资金流/链上安全事件/监管与代币化；**用户明确要求必须有**）⑨ 一周回顾。
 
 ---
 
@@ -268,33 +268,29 @@ miniflux mark <id1> <id2> ... --status read
 |---|---|
 | `--after 2d` 返回 0 条 | 改用绝对日期 `--after YYYY-MM-DD` |
 | `miniflux entries` 输出不是数组 | 返回的是 `{total, entries}` 对象，解析用 `d['entries']`；`total` 可能大于 200 |
-| 窗口内条目 > 200（如 328 条） | `--offset 200 --limit 200` 再查一次，两次结果合并 |
+| 窗口内条目 > 200 | 按 total 分页多次拉取再合并（见 §9.1） |
 | `--compact` 里 feed 不是字符串 | feed 是嵌套对象，用 `e['feed']['title']`（别当成字符串 `.get('title')` 会报错） |
 | 漏掉已读消息 | 必须带 `--status read,unread` |
-| HN 正文抓取失败 | leanrada / energy.gov / bloomberg / guardian / techcrunch 等常失败返回空或只有导航外壳，退回标题+评论数写，不编造；thewalrus.ca 等站点正文前有大量导航壳，用 `text.find(标题关键词)` 定位正文起点再截取（8/12 实测可用）。8/17 新坑：platform.claude.com（Claude 系统提示词页）返回 region-unavailable 导航壳（LEN 13831 全为导航）；wiley（alz-journals）403、newscientist 406、hindawi 403 等出版社反爬；mun-logadan.github.io（Opus 5 帖）可正常抓取、severe-weather.eu 用 find 定位正文（IDX 489 起） |
+| HN 正文抓取失败 | 付费墙/反爬站点常返回空或只有导航外壳（leanrada、energy.gov、bloomberg、guardian、wiley/newscientist 403 等），退回标题+评论数写、不编造；导航壳页用 `text.find(标题关键词)` 定位正文起点再截取（8/12 实测可用，含 platform.claude.com 的 region-unavailable 页、severe-weather.eu 等） |
 | 不知道哪些是深度文章 | 按 feed 分组统计，快讯看标题、深度读正文 |
 | rank 1 分数很低且无正文 | 选 rank 2+ 有实质内容的帖子当头条（如 8/9 头条 rank 54、772 分） |
-| 跨天重跑，HN 榜单几乎不变 | 头条先排除昨天已写过/已当过头条的帖子（如 8/9 头条 DeepSeek V4 Flash、Noema、丹麦答辩等今天仍在榜），从昨天未覆盖的新帖里按分数+评论数+正文可抓取性选（8/10 选 Windows 天气 266 分/218 评论） |
-| 同一 HN 帖标题被改写/分数继续涨 | HN 会自动改写帖标题（8/16 数学论文从 "AI Isn't Outthinking Mathematicians…" 变为 "AI has access to a vastly larger working memory…"，分数 317→320、评论 274→277）；跨天旧帖分数可大涨（Firefox/uBlock 帖 77→1635 分）。按 URL/内容识别同一帖，引用时一律用最新一次拉取的 points/comments |
-| HN 榜单日内也会变动（同一天两次 `top 100`，8/25 实测 rank 5/6/7 互换、多处 rank ±1，points 微涨如 635→637/938→942） | 按标题+URL 识别同一帖、用最后一次拉取的 points/comments，rank 号仅作参考；同一次运行内开头选好的头条若分数变化，写简报前再拉一次取最新值 |
-| AI 聚合"牛来大模型 Ox Alpha 登顶"（8/24 多条，与《牛来》电影同名的梗/传闻） | 未获其他信源印证，按存疑内容剔除、不写；可写的是真实事件《牛来》电影票房（联合早报：上映 19 天破 4200 万/观影 150 万/IMDb 6.5/新作《羊高》）|
-| 头条正文抓取失败 | 用标题+评论数写，注明"正文未能抓取"，不编造；若订阅源有对应中文报道（8/15 智谱 GLM-5.3 的 z.ai 抓取失败、Qwen3.8 的 HuggingFace 模型卡正文被导航/模板淹没），改用 miniflux 订阅正文补硬数据（基准分、参数、价格），头条仍标注 HN points/comments |
+| 跨天重跑，HN 榜单几乎不变 | 先排除昨天已写过/已当过头条的旧帖，从新帖里按分数+评论数+正文可抓取性选（如 8/10 选 Windows 天气 266 分/218 评论） |
+| 同一 HN 帖标题被改写/分数继续涨 | HN 会改写标题、跨天旧帖分数可大涨（Firefox/uBlock 帖 77→1635 分）；按 URL/内容识别同一帖，引用时一律用最新一次拉取的 points/comments |
+| HN 榜单日内也会变动 | 同一天两次 `top 100` 会 rank 互换、points 微涨（8/25 实测）；按标题+URL 识别同一帖、用最后一次拉取的 points/comments，rank 号仅作参考；写简报前再拉一次取最新值 |
+| 头条正文抓取失败 | 用标题+评论数写，注明"正文未能抓取"，不编造；若订阅源有对应中文报道（8/15 智谱 GLM-5.3 z.ai、Qwen3.8 模型卡），改用 miniflux 订阅正文补硬数据（基准分、参数、价格），头条仍标注 HN points/comments |
 | 用户说"太 AI 了" | 检查：是否用了"不是…而是…"、比喻、跳跃式总结句；改为平实因果陈述 |
 | 远端 index.html 指向旧的/缺失 | 先 `find -type l -delete` 清掉所有软链接，再 `ln -sf 最新文件 index.html` |
 | 不确定是否推送成功 | 对比两端 MD5 + `ls -la` 看软链接；文件大小与本地一致即成功 |
-| 当天已有同日期 `briefing-YYYY-MM-DD.html` / cron 正在跑 | 先看 `briefing-playbook/` 成品时间戳、`run-YYYY-MM-DD.log`、`ps aux | grep run-briefing`；同名文件会被后写者覆盖，手动会话不持 flock、可与 cron 并行 → 推送后在其结束后再核一次远端 MD5，被覆盖就重推 |
-| cron 日志只有 header 无产出 | `run-YYYY-MM-DD.log` 只有开始行、无后续输出、`ps` 无 run-briefing 进程、lock 文件为空 → cron 启动即失败（8/10、8/17、8/23 三次实测 06:00 启动后无任何产出），且呈间歇性复发（8/19–8/22 连续四天正常、8/23 再次失败），可放心手动执行；手动 scp 会覆盖 cron 可能留下的同名空文件，推送后再核一次 MD5 即可 |
-| 同一订阅事件跨天状态反转（如 8/16→8/17 卡塔尔-伊朗飞行员：昨天金十"卡塔尔否认拘留、发现遗骸"，今天伊朗声称"抓获扣押 3 名飞行员"并要求派调查团） | 写作前先读昨天简报对应段落，把反转写成"同一事件的最新一轮交锋"并给双方说法，不照抄昨天的表述；地缘事件尤其要核对最新拉取 |
-| 两天窗口 `total` 上千（8/12 实测 1252），只拉前 400 条只有最近 15 小时 | 两天窗口也按 total 分页（offset 0–1200 共 7 页）拉全；标已读前务必拉全窗口再取 unread 并集，否则漏标 |
+| 当天已有同日期 `briefing-YYYY-MM-DD.html` / cron 正在跑 | 先看 `briefing-playbook/` 成品时间戳、`run-YYYY-MM-DD.log`、`ps aux | grep run-briefing`；手动会话不持 flock、可与 cron 并行 → 推送后在其结束后再核一次远端 MD5，被覆盖就重推 |
+| cron 日志只有 header 无产出 | `run-YYYY-MM-DD.log` 只有开始行、`ps` 无 run-briefing 进程、lock 文件为空 → cron 启动即失败（8/10、8/17、8/23 三次实测，间歇性复发），可放心手动执行；手动 scp 会覆盖 cron 留下的同名空文件，推送后再核一次 MD5 即可 |
+| 同一订阅事件跨天状态反转 | 如 8/16→8/17 卡塔尔-伊朗飞行员：昨天金十"否认拘留、发现遗骸"，今天伊朗"抓获扣押 3 名飞行员"；写作前先读昨天简报对应段落，把反转写成"同一事件的最新一轮交锋"并给双方说法，地缘事件尤其要核对最新拉取 |
 | 质量检查脚本打印的 `len(html)` | 是字符数不是 UTF-8 字节数（8/9 实测 12760 字符 ≈ 23354 字节），与 scp 的文件大小对比时别误读 |
-| 分页拉取时个别页偶发 `Network error ... fetch failed`（8/13 实测 offset 200/1000/1200/1400 各失败一次） | 属瞬时网络错误，重试即可；批量拉页时先判空再重试（判空要判断 entries 非空，`json.load` 对空列表也会通过，否则空页不会触发重试），不必整窗重来；标已读前仍要重拉一次全窗取 unread 并集 |
-| 分页期间快讯 feed 持续进新条目导致 offset 错位漏页（8/16 实测） | 先以 `--limit 1` 探 total 再分页时，paging 期间 total 从 3821 涨到约 4020，offset 200 起就漏掉了最新约 199 条；可把两天窗口数据（覆盖新尾部）与一周数据按 id 合并去重补齐，不必重拉整窗 |
-| 质量检查漏掉"不是新模型，而是'信任'"这类一般形式（8/18 实测，字面 `'不是…而是…' not in html` 查不到） | §9.4 需加正则 `不是[^，。；]{0,14}[，,][^。；]{0,14}而是`，覆盖"不是 X，而是 Y"（含引号/破折号变体） |
-| offset 超出 total 的分页返回空 entries（8/19 实测 7 天窗口 total 3797、offset 3800 返回空并触发 5 次重试） | 空页是正常终点：先用 `--limit 1` 探 total、只拉 `range(0,total,200)`，或把空页判定为正常结束而非网络错误，避免白白重试 |
-| 凌晨 06:00 快讯 feed 不活跃，两次拉取 total 稳定（8/18 实测两天窗口 932=932、8/19 实测 1271=1271） | 首次拉取即可覆盖全窗，标已读前仍按惯例重拉一次取 unread 并集；白天执行才需防 offset 漂移。跨日 total 波动大（8/18 932 vs 8/19 1271），但同一次运行内首拉与重拉一致 |
-| `hn-briefing top` 偶发 `error: fetch failed`（8/20 实测，此时 curl 直连 HN API 返回 200、node 单测 fetch 也正常） | 瞬时网络错误，直接重试 `hn-briefing top 100` 即可（8/20 实测重试一次成功）；若反复失败再用 curl 验证 HN API 连通性，排除 CLI 本身问题。8/24 实测更严重情形：CLI 连败 8 次、每次都是 `Connect Timeout Error (10s)` 连到 34.120.206.254:443，而 curl/node 单测 fetch 正常（间歇性连接超时）；此时放弃 CLI 重试，直接用自写 node 脚本拉取——每请求最多 5 次重试（间隔 1.5s 递增）、AbortSignal 15s 超时、8 并发，输出结构与 CLI 一致（rank/title/score/descendants/url/by/time），一次成功 |
-| "SpaceX 收购 Cursor" 此前被当离谱传闻剔除（AI 聚合首发），8/20 实测金十 Plus 精选图表（"豪掷600亿美元买下Cursor"）与风向旗（"SpaceX旗下公司Cursor推出代码托管平台"）均按事实报道 | 该传闻已获多源交叉印证，不再是纯谣言；但写简报仍以官方/权威信源为准，且 8/19 已写过 Cursor Origin 上线，跨天榜单旧帖不重复写 |
-| scp/ssh 偶发 `Connection closed by remote host`（公钥验证后即断，8/22 连续 2 次失败，第三次 verbose scp 成功传输、双端 MD5 一致；期间 ping 正常、端口 20022 可连、密钥交换正常） | 属服务器侧瞬时连接问题（疑连接数限制/fail2ban），等几秒重试即可；发布以双端 MD5 一致为准，不必因一次失败就停下报告整轮失败 |
+| 分页拉取时个别页偶发 `fetch failed` | 瞬时网络错误（8/13 实测各页各失败一次），重试即可；判空要判断 entries 非空（`json.load` 对空列表也通过），不必整窗重来；标已读前仍重拉一次全窗取 unread 并集 |
+| 分页期间快讯 feed 持续进新条目导致 offset 错位漏页 | 8/16 实测 paging 期间 total 从 3821 涨到约 4020；把两天窗口数据（覆盖新尾部）与一周数据按 id 合并去重补齐，不必重拉整窗 |
+| offset 超出 total 的分页返回空 entries | 空页是正常终点（8/19 实测）：先 `--limit 1` 探 total、只拉 `range(0,total,200)`，或把空页判定为正常结束而非网络错误 |
+| 凌晨执行时两次拉取 total 稳定 | 8/18 实测 932=932、8/19 实测 1271=1271（跨日波动大）；凌晨快讯不活跃、无 offset 漂移，首拉即可覆盖全窗；白天执行才需防漂移；标已读前仍按惯例重拉一次取 unread 并集 |
+| `hn-briefing top` 偶发 `fetch failed`/连接超时 | 瞬时错误直接重试一次（8/20 实测成功）；若 CLI 反复 `Connect Timeout` 连到同一 IP（8/24 连败 8 次，curl 直连正常），放弃 CLI 改用自写 node 脚本直连 HN API（每请求最多 5 次重试、15s 超时、8 并发，输出结构与 CLI 一致），一次成功 |
+| scp/ssh 偶发 `Connection closed by remote host` | 公钥验证后即断（8/22 连续 2 次），属服务器侧瞬时连接问题（疑连接数限制/fail2ban），等几秒重试即可；发布以双端 MD5 一致为准，不必因一次失败就停下报告整轮失败 |
 ---
 
 ## 8. 交付
@@ -339,24 +335,27 @@ cd /home/limour/pi-playbook && git add briefing-playbook.md && git commit -m "do
 
 ## 9. 常用代码段（直接抄，均为本次实操验证）
 
-### 9.1 拉取两天窗口数据 + 分页 + 按 feed 统计
+### 9.1 拉取两天窗口数据（探 total 全量分页）+ 按 feed 统计
 
 ```bash
 export PATH="/home/limour/pi-playbook/.pi/skills/miniflux/bin:$PATH"
-miniflux entries --status read,unread --after <今天减2天> --order published_at --direction desc --limit 200 --compact > /tmp/mf1.json
-miniflux entries --status read,unread --after <今天减2天> --order published_at --direction desc --limit 200 --offset 200 --compact > /tmp/mf2.json
 ```
 
 ```python
-import json
+import json, subprocess, time
 from collections import Counter
-d1 = json.load(open('/tmp/mf1.json'))['entries']   # 返回 {total, entries}，不是数组！
-d2 = json.load(open('/tmp/mf2.json'))['entries']
-all_e = d1 + d2                                    # total > 200 时必须合并两页
+AFTER = "2026-08-XX"          # 今天减 2 天（绝对日期，勿用相对时间）；一周回顾换成一周前日期
+base = ["miniflux", "entries", "--status", "read,unread", "--after", AFTER,
+        "--order", "published_at", "--direction", "desc", "--limit", "200", "--compact"]
+total = json.load(subprocess.run(base + ["--limit", "1"], capture_output=True, text=True).stdout)["total"]  # 返回 {total, entries}
+all_e = []
+for off in range(0, total, 200):
+    es = json.load(subprocess.run(base + ["--offset", str(off)], capture_output=True, text=True).stdout)["entries"]
+    if es: all_e += es          # 空页 = 正常终点，不重试
+    time.sleep(0.3)
 json.dump(all_e, open('/tmp/mf_all.json', 'w'), ensure_ascii=False)
 print('total:', len(all_e))
-c = Counter(e['feed']['title'] for e in all_e)     # --compact 下 feed 是嵌套对象
-for k, v in c.most_common(): print(f'{v:4d}  {k}')
+for k, v in Counter(e['feed']['title'] for e in all_e).most_common(): print(f'{v:4d}  {k}')
 ```
 
 ### 9.2 读正文（去 HTML 标签）
