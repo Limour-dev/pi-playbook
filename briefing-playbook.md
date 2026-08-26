@@ -49,7 +49,7 @@ miniflux entries --status read,unread --after <绝对日期> --order published_a
 1. **不要用相对时间 `--after 2d`**——实测返回 0 结果，有 bug。一律用绝对 ISO 日期：`--after 2026-08-07`（今天减 2 天）。
 2. **必须带 `--status read,unread`**——否则默认只查 unread，会漏掉昨天已读的消息。
 3. **不要用 `--fields`**——它会丢掉 feed 信息（feed 变成 `?`），无法按订阅源筛选。要精简用 `--compact`。
-4. **先探 total 再按 total 分页**（总量波动大，实测 576–1252 不等）：`total` 是窗口内全部条目（含已读），只拉前 400 条只覆盖最近约 15 小时、会漏掉窗口早段。标已读前务必拉全窗口再取 unread 并集。
+4. **先探 total 再按 total 分页**（总量波动大，实测 576–1442 不等）：`total` 是窗口内全部条目（含已读），只拉前 400 条只覆盖最近约 15 小时、会漏掉窗口早段。标已读前务必拉全窗口再取 unread 并集。
 5. 条目超过 200 时，先按 feed 统计分布（`collections.Counter`），心里有数再读正文。
 
 ### 2.2 HN 数据
@@ -83,7 +83,7 @@ miniflux entry <id>    # 单篇全文（HTML），用正则去标签
 ### 2.4 一周回顾的数据
 
 一周回顾需要 `--after <一周前日期>` 再拉一次（如 `--after 2026-08-02`），重点看深度 feed 在 8 天窗口内的主线（模型发布、安全事件、组织变动、硬件动向、科研进展（Nature/MIT 科技评论）），同时扫一遍地缘（战争/贸易）与国内批判（司法/信访/科研伦理）的周度主线。
-**注意（实测）**：`--limit 200` 只返回窗口内**最新**的 200 条，必须 offset 分页到最早条目为止（页数 ≈ total/200；窗口总量每天都在涨，8 月实测从约 1k 涨到约 4.5k），否则一周回顾会漏掉前半周主线。分页完成后按 feed 分组扫主线。
+**注意（实测）**：`--limit 200` 只返回窗口内**最新**的 200 条，必须 offset 分页到最早条目为止（页数 ≈ total/200；窗口总量每天都在涨，8 月实测从约 1k 涨到约 4.9k），否则一周回顾会漏掉前半周主线。分页完成后按 feed 分组扫主线。
 
 ---
 
@@ -282,7 +282,7 @@ miniflux mark <id1> <id2> ... --status read
 | 远端 index.html 指向旧的/缺失 | 先 `find -type l -delete` 清掉所有软链接，再 `ln -sf 最新文件 index.html` |
 | 不确定是否推送成功 | 对比两端 MD5 + `ls -la` 看软链接；文件大小与本地一致即成功 |
 | 当天已有同日期 `briefing-YYYY-MM-DD.html` / cron 正在跑 | 先看 `briefing-playbook/` 成品时间戳、`run-YYYY-MM-DD.log`、`ps aux | grep run-briefing`；手动会话不持 flock、可与 cron 并行 → 推送后在其结束后再核一次远端 MD5，被覆盖就重推 |
-| cron 日志只有 header 无产出 | `run-YYYY-MM-DD.log` 只有开始行、`ps` 无 run-briefing 进程、lock 文件为空 → cron 启动即失败（8/10、8/17、8/23 三次实测，间歇性复发），可放心手动执行；手动 scp 会覆盖 cron 留下的同名空文件，推送后再核一次 MD5 即可 |
+| cron 日志只有 header 无产出 | `run-YYYY-MM-DD.log` 只有开始行、`ps` 无 run-briefing 进程、lock 文件为空 → cron 启动即失败（8/10、8/17、8/23、8/27 四次实测，间歇性复发），可放心手动执行；手动 scp 会覆盖 cron 留下的同名空文件，推送后再核一次 MD5 即可 |
 | 同一订阅事件跨天状态反转 | 如 8/16→8/17 卡塔尔-伊朗飞行员：昨天金十"否认拘留、发现遗骸"，今天伊朗"抓获扣押 3 名飞行员"；写作前先读昨天简报对应段落，把反转写成"同一事件的最新一轮交锋"并给双方说法，地缘事件尤其要核对最新拉取 |
 | 质量检查脚本打印的 `len(html)` | 是字符数不是 UTF-8 字节数（8/9 实测 12760 字符 ≈ 23354 字节），与 scp 的文件大小对比时别误读 |
 | QA 报 "PLAIN HAS DIGITS" | 引入段混入 "2 纳米"、"16 岁"、"17 岁"、"113 天"、"8 万美元" 等含 ASCII 数字的写法即触发（8/26 实测 4 处）；改写为不含数字的表述（"最新工艺""未成年人""重新站上八万美元"），具体数字全部留给 card；中文数字（如"四成多"）可通过检查但仍尽量避免 |
@@ -348,10 +348,10 @@ from collections import Counter
 AFTER = "2026-08-XX"          # 今天减 2 天（绝对日期，勿用相对时间）；一周回顾换成一周前日期
 base = ["miniflux", "entries", "--status", "read,unread", "--after", AFTER,
         "--order", "published_at", "--direction", "desc", "--limit", "200", "--compact"]
-total = json.load(subprocess.run(base + ["--limit", "1"], capture_output=True, text=True).stdout)["total"]  # 返回 {total, entries}
+total = json.loads(subprocess.run(base + ["--limit", "1"], capture_output=True, text=True).stdout)["total"]  # 返回 {total, entries}；stdout 是 str，必须 json.loads 而非 json.load（Python 3.14 下 json.load(str) 报 AttributeError，8/27 实测）
 all_e = []
 for off in range(0, total, 200):
-    es = json.load(subprocess.run(base + ["--offset", str(off)], capture_output=True, text=True).stdout)["entries"]
+    es = json.loads(subprocess.run(base + ["--offset", str(off)], capture_output=True, text=True).stdout)["entries"]
     if es: all_e += es          # 空页 = 正常终点，不重试
     time.sleep(0.3)
 json.dump(all_e, open('/tmp/mf_all.json', 'w'), ensure_ascii=False)
