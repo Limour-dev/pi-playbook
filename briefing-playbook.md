@@ -274,7 +274,7 @@ miniflux mark <id1> <id2> ... --status read
 | HN 正文抓取失败 | 付费墙/反爬站点常返回空或只有导航外壳（leanrada、energy.gov、bloomberg、guardian、wiley/newscientist 403 等），退回标题+评论数写、不编造；导航壳页用 `text.find(标题关键词)` 定位正文起点再截取（8/12 实测可用，含 platform.claude.com 的 region-unavailable 页、severe-weather.eu 等） |
 | 不知道哪些是深度文章 | 按 feed 分组统计，快讯看标题、深度读正文 |
 | rank 1 分数很低且无正文 | 选 rank 2+ 有实质内容的帖子当头条（如 8/9 头条 rank 54、772 分） |
-| 跨天重跑，HN 榜单几乎不变 | 先排除昨天已写过/已当过头条的旧帖，从新帖里按分数+评论数+正文可抓取性选（如 8/10 选 Windows 天气 266 分/218 评论） |
+| 跨天重跑，HN 榜单几乎不变 | 先排除昨天已写过/已当过头条的旧帖，从新帖里按分数+评论数+正文可抓取性选（如 8/10 选 Windows 天气 266 分/218 评论）；昨日头条次日仍居榜首且分数更高（8/29 Nvidia-HF 1802→1944 分）也照样排除，改选与订阅可交叉印证的新帖当头条（8/29 选 Small Models Have Arrived 762 分 ↔ 智谱 GLM-5.3 开源/混元 Hy4 发布，calv.info 正文可抓取） |
 | 同一 HN 帖标题被改写/分数继续涨 | HN 会改写标题、跨天旧帖分数可大涨（Firefox/uBlock 帖 77→1635 分）；按 URL/内容识别同一帖，引用时一律用最新一次拉取的 points/comments |
 | HN 榜单日内也会变动 | 同一天两次 `top 100` 会 rank 互换、points 微涨（8/25 实测）；按标题+URL 识别同一帖、用最后一次拉取的 points/comments，rank 号仅作参考；写简报前再拉一次取最新值。榜尾帖子（rank 90+）可能在两次拉取之间直接掉出前 100（8/28 实测 OpenAI HF 事件报告 rank 99→掉榜），引用已掉榜帖子时用首次拉取值或省略分数标注 |
 | 头条正文抓取失败 | 用标题+评论数写，注明"正文未能抓取"，不编造；若订阅源有对应中文报道（8/15 智谱 GLM-5.3 z.ai、Qwen3.8 模型卡），改用 miniflux 订阅正文补硬数据（基准分、参数、价格），头条仍标注 HN points/comments。8/26 Apple M6 发布：`hn-briefing content` 对 apple.com/newsroom 连试 3 次空输出，curl 直连返回 "Page Not Found"（URL 改 slug 或反爬），改由风向旗引财联社正文补硬数据（M6 起售价 899 美元、Mac Studio 9/22 开售），标题照常写、注明官网正文未能直接抓取 |
@@ -282,7 +282,7 @@ miniflux mark <id1> <id2> ... --status read
 | 远端 index.html 指向旧的/缺失 | 先 `find -type l -delete` 清掉所有软链接，再 `ln -sf 最新文件 index.html` |
 | 不确定是否推送成功 | 对比两端 MD5 + `ls -la` 看软链接；文件大小与本地一致即成功 |
 | 当天已有同日期 `briefing-YYYY-MM-DD.html` / cron 正在跑 | 先看 `briefing-playbook/` 成品时间戳、`run-YYYY-MM-DD.log`、`ps aux | grep run-briefing`；手动会话不持 flock、可与 cron 并行 → 推送后在其结束后再核一次远端 MD5，被覆盖就重推 |
-| cron 日志只有 header 无产出 | `run-YYYY-MM-DD.log` 只有开始行、`ps` 无 run-briefing 进程、lock 文件为空 → cron 启动即失败（8/10、8/17、8/23、8/27、8/28 五次实测，间歇性复发），可放心手动执行；手动 scp 会覆盖 cron 留下的同名空文件，推送后再核一次 MD5 即可 |
+| cron 日志只有 header 无产出 | `run-YYYY-MM-DD.log` 只有开始行、`ps` 无 run-briefing 进程、lock 文件为空 → cron 启动即失败（8/10、8/17、8/23、8/27、8/28、8/29 六次实测，间歇性复发），可放心手动执行；手动 scp 会覆盖 cron 留下的同名空文件，推送后再核一次 MD5 即可 |
 | 同一订阅事件跨天状态反转 | 如 8/16→8/17 卡塔尔-伊朗飞行员：昨天金十"否认拘留、发现遗骸"，今天伊朗"抓获扣押 3 名飞行员"；写作前先读昨天简报对应段落，把反转写成"同一事件的最新一轮交锋"并给双方说法，地缘事件尤其要核对最新拉取 |
 | 质量检查脚本打印的 `len(html)` | 是字符数不是 UTF-8 字节数（8/9 实测 12760 字符 ≈ 23354 字节），与 scp 的文件大小对比时别误读 |
 | QA 报 "PLAIN HAS DIGITS" | 引入段混入 "2 纳米"、"16 岁"、"17 岁"、"113 天"、"8 万美元" 等含 ASCII 数字的写法即触发（8/26 实测 4 处）；改写为不含数字的表述（"最新工艺""未成年人""重新站上八万美元"），具体数字全部留给 card；中文数字（如"四成多"）可通过检查但仍尽量避免 |
