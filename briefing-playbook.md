@@ -271,7 +271,7 @@ miniflux mark <id1> <id2> ... --status read
 | 窗口内条目 > 200 | 按 total 分页多次拉取再合并（见 §9.1） |
 | `--compact` 里 feed 不是字符串 | feed 是嵌套对象，用 `e['feed']['title']`（别当成字符串 `.get('title')` 会报错） |
 | 漏掉已读消息 | 必须带 `--status read,unread` |
-| HN 正文抓取失败 | 付费墙/反爬站点常返回空或只有导航外壳（leanrada、energy.gov、bloomberg、guardian、wiley/newscientist 403 等），退回标题+评论数写、不编造；导航壳页用 `text.find(标题关键词)` 定位正文起点再截取（8/12 实测可用，含 platform.claude.com 的 region-unavailable 页、severe-weather.eu 等） |
+| HN 正文抓取失败 | 付费墙/反爬站点常返回空或只有导航外壳（leanrada、energy.gov、bloomberg、guardian、openai.com、wiley/newscientist 403 等），退回标题+评论数写、不编造；导航壳页用 `text.find(标题关键词)` 定位正文起点再截取（8/12 实测可用，含 platform.claude.com 的 region-unavailable 页、severe-weather.eu 等）；openai.com 官方博客（8/30 头条 OpenAI 断供 Cursor 公告）连抓为空，改由订阅端 MIT 科技评论/财联社/AI 聚合多源正文补要点 |
 | 不知道哪些是深度文章 | 按 feed 分组统计，快讯看标题、深度读正文 |
 | rank 1 分数很低且无正文 | 选 rank 2+ 有实质内容的帖子当头条（如 8/9 头条 rank 54、772 分） |
 | 跨天重跑，HN 榜单几乎不变 | 先排除昨天已写过/已当过头条的旧帖，从新帖里按分数+评论数+正文可抓取性选（如 8/10 选 Windows 天气 266 分/218 评论）；昨日头条次日仍居榜首且分数更高（8/29 Nvidia-HF 1802→1944 分）也照样排除，改选与订阅可交叉印证的新帖当头条（8/29 选 Small Models Have Arrived 762 分 ↔ 智谱 GLM-5.3 开源/混元 Hy4 发布，calv.info 正文可抓取） |
@@ -282,10 +282,10 @@ miniflux mark <id1> <id2> ... --status read
 | 远端 index.html 指向旧的/缺失 | 先 `find -type l -delete` 清掉所有软链接，再 `ln -sf 最新文件 index.html` |
 | 不确定是否推送成功 | 对比两端 MD5 + `ls -la` 看软链接；文件大小与本地一致即成功 |
 | 当天已有同日期 `briefing-YYYY-MM-DD.html` / cron 正在跑 | 先看 `briefing-playbook/` 成品时间戳、`run-YYYY-MM-DD.log`、`ps aux | grep run-briefing`；手动会话不持 flock、可与 cron 并行 → 推送后在其结束后再核一次远端 MD5，被覆盖就重推 |
-| cron 日志只有 header 无产出 | `run-YYYY-MM-DD.log` 只有开始行、`ps` 无 run-briefing 进程、lock 文件为空 → cron 启动即失败（8/10、8/17、8/23、8/27、8/28、8/29 六次实测，间歇性复发），可放心手动执行；手动 scp 会覆盖 cron 留下的同名空文件，推送后再核一次 MD5 即可 |
+| cron 日志只有 header 无产出 | `run-YYYY-MM-DD.log` 只有开始行、`ps` 无 run-briefing 进程、lock 文件为空 → cron 启动即失败（8/10、8/17、8/23、8/27、8/28、8/29、8/30 七次实测，间歇性复发），可放心手动执行；手动 scp 会覆盖 cron 留下的同名空文件，推送后再核一次 MD5 即可 |
 | 同一订阅事件跨天状态反转 | 如 8/16→8/17 卡塔尔-伊朗飞行员：昨天金十"否认拘留、发现遗骸"，今天伊朗"抓获扣押 3 名飞行员"；写作前先读昨天简报对应段落，把反转写成"同一事件的最新一轮交锋"并给双方说法，地缘事件尤其要核对最新拉取 |
 | 质量检查脚本打印的 `len(html)` | 是字符数不是 UTF-8 字节数（8/9 实测 12760 字符 ≈ 23354 字节），与 scp 的文件大小对比时别误读 |
-| QA 报 "PLAIN HAS DIGITS" | 引入段混入 "2 纳米"、"16 岁"、"17 岁"、"113 天"、"8 万美元" 等含 ASCII 数字的写法即触发（8/26 实测 4 处）；改写为不含数字的表述（"最新工艺""未成年人""重新站上八万美元"），具体数字全部留给 card；中文数字（如"四成多"）可通过检查但仍尽量避免 |
+| QA 报 "PLAIN HAS DIGITS" | 引入段混入 "2 纳米"、"16 岁"、"17 岁"、"113 天"、"8 万美元"、"htmx 4.0"、"Python 2/3" 等含 ASCII 数字的写法即触发（8/26、8/30 实测）；改写为不含数字的表述（"最新工艺""未成年人""重新站上八万美元""新的大版本""旧版 Python 迁到新版"），具体数字与版本号全部留给 card；中文数字（如"四成多"）可通过检查但仍尽量避免 |
 | 分页拉取时个别页偶发 `fetch failed` | 瞬时网络错误（8/13 实测各页各失败一次），重试即可；判空要判断 entries 非空（`json.load` 对空列表也通过），不必整窗重来；标已读前仍重拉一次全窗取 unread 并集 |
 | 分页期间快讯 feed 持续进新条目导致 offset 错位漏页 | 8/16 实测 paging 期间 total 从 3821 涨到约 4020；把两天窗口数据（覆盖新尾部）与一周数据按 id 合并去重补齐，不必重拉整窗 |
 | offset 超出 total 的分页返回空 entries | 空页是正常终点（8/19 实测）：先 `--limit 1` 探 total、只拉 `range(0,total,200)`，或把空页判定为正常结束而非网络错误 |
