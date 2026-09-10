@@ -284,7 +284,7 @@ miniflux mark <id1> <id2> ... --status read
 | 远端 index.html 指向旧的/缺失 | 先 `find -type l -delete` 清掉所有软链接，再 `ln -sf 最新文件 index.html` |
 | 不确定是否推送成功 | 对比两端 MD5 + `ls -la` 看软链接；文件大小与本地一致即成功 |
 | 当天已有同日期 `briefing-YYYY-MM-DD.html` / cron 正在跑 | 先看 `briefing-playbook/` 成品时间戳、`run-YYYY-MM-DD.log`、`ps aux | grep run-briefing`；手动会话不持 flock、可与 cron 并行 → 推送后在其结束后再核一次远端 MD5，被覆盖就重推 |
-| cron 日志只有 header 无产出 | `run-YYYY-MM-DD.log` 只有开始行、`ps` 无 run-briefing 进程、lock 文件为空 → cron 启动即失败（8/10、8/17、8/23、8/27、8/28、8/29、8/30、8/31、9/2、9/4、9/5、9/7 十二次实测，间歇性复发），可放心手动执行；手动 scp 会覆盖 cron 留下的同名空文件，推送后再核一次 MD5 即可。**提问变体（9/6）**：日志不是只有 header，而是整段"你贴出了 briefing-playbook.md，但没有说明要做什么…"的提问式输出（agent 启动成功但把 `-p @file` 当成"用户贴手册未给任务"、没按 §0 执行就退出 exit=0）——同样无产出，按未产出处理手动执行；判定时以"日志里有没有执行痕迹/成品文件"为准，别被非空日志骗了（9/7 再发普通 header 形式，为第十三次失败；9/9 日志除 header 外还有两行 [pi-trace-id]、仍无执行痕迹与成品，为第十四次，同样按未产出处理） |
+| cron 日志只有 header 无产出 | `run-YYYY-MM-DD.log` 只有开始行、`ps` 无 run-briefing 进程、lock 文件为空 → cron 启动即失败（8/10、8/17、8/23、8/27、8/28、8/29、8/30、8/31、9/2、9/4、9/5、9/7 十二次实测，间歇性复发），可放心手动执行；手动 scp 会覆盖 cron 留下的同名空文件，推送后再核一次 MD5 即可。**提问变体（9/6）**：日志不是只有 header，而是整段"你贴出了 briefing-playbook.md，但没有说明要做什么…"的提问式输出（agent 启动成功但把 `-p @file` 当成"用户贴手册未给任务"、没按 §0 执行就退出 exit=0）——同样无产出，按未产出处理手动执行；判定时以"日志里有没有执行痕迹/成品文件"为准，别被非空日志骗了（9/7 再发普通 header 形式，为第十三次失败；9/9 日志除 header 外还有两行 [pi-trace-id]、仍无执行痕迹与成品，为第十四次，同样按未产出处理；9/10 连日志文件都没生成，为第十五次，见下表「当天 cron 完全没留下日志文件」） |
 | 同一订阅事件跨天状态反转/连续剧 | 如 8/16→8/17 卡塔尔-伊朗飞行员：昨天金十"否认拘留、发现遗骸"，今天伊朗"抓获扣押 3 名飞行员"；写作前先读昨天简报对应段落，把反转写成"同一事件的最新一轮交锋"并给双方说法，地缘事件尤其要核对最新拉取。连续剧式事件同理：8/31 已写"OpenAI 买数万台 Mac 训练模型"，9/1 的新进展是"苹果被 AI 需求打乱节奏 + Anthropic 租用 Mac mini + 苹果诉 OpenAI 商业秘密 + 库克交班特努斯"，头条与 ② 段都围绕新角度展开而非复述昨天内容 |
 | 质量检查脚本打印的 `len(html)` | 是字符数不是 UTF-8 字节数（8/9 实测 12760 字符 ≈ 23354 字节），与 scp 的文件大小对比时别误读 |
 | QA 报 "PLAIN HAS DIGITS" | 引入段混入 "2 纳米"、"16 岁"、"17 岁"、"113 天"、"8 万美元"、"htmx 4.0"、"Python 2/3"、模型名带版本号（如 "Fable 5.1"，9/2 实测）、游戏名里的 ASCII 数字（如"《半条命 2》"，9/1 实测）、组织名缩写（如 "G20"，9/3 实测）等写法即触发（8/26、8/30、9/1、9/2、9/3 实测）；改写为不含数字的表述（"最新工艺""未成年人""重新站上八万美元""新的大版本""旧版 Python 迁到新版""新一代 Claude 模型""《半条命》系列第三章""二十国集团"），具体数字与版本号全部留给 card；中文数字（如"四成多"）可通过检查但仍尽量避免 |
@@ -295,6 +295,11 @@ miniflux mark <id1> <id2> ... --status read
 | 一次性打印大批量标题/正文被 50KB 截断 | 9/4 实测 `print` 数百条金十标题时输出在约 50KB 处截断、只保留较新的头部、较旧条目（含重要事件如科威特遭袭）被静默丢弃，按标题清单扫主线会漏料；按时间段（如按 6 小时一段）分多次打印、或缩短每条截断宽度（title[:60]）即可避免 |
 | `hn-briefing top` 偶发 `fetch failed`/连接超时 | 瞬时错误直接重试一次（8/20 实测成功）；若 CLI 反复 `Connect Timeout` 连到同一 IP（8/24 连败 8 次，curl 直连正常），放弃 CLI 改用自写 node 脚本直连 HN API（每请求最多 5 次重试、15s 超时、8 并发，输出结构与 CLI 一致），一次成功 |
 | scp/ssh 偶发 `Connection closed by remote host` | 公钥验证后即断（8/22 连续 2 次），属服务器侧瞬时连接问题（疑连接数限制/fail2ban），等几秒重试即可；发布以双端 MD5 一致为准，不必因一次失败就停下报告整轮失败 |
+| 当天 cron 完全没留下日志文件 | 9/10 实测：`briefing-playbook/run-2026-09-10.log` **根本不存在**（不是只有 header、也不是提问式输出），`ps` 无进程、无成品文件——cron 连启动都没到就失败，为第十五次失败。判定顺序：先 `ls briefing-playbook/run-$(date +%F).log`，不存在即未执行，可放心手动跑；不要因为「以前失败都会留 header」就以为今天没跑过 |
+| 当天 cron 失败导致窗口拉长到约 35 小时 | cron 失败会把实际新增窗口变成「昨天执行终点 → 现在」，而非固定两天。判定昨日终点仍用 `max(published_at)`（取窗口内 `status=='read'` 的最新一条，9/10 实测为 9/9 05:55，即昨天 06:00 那次 cron 的执行时刻）；其后的 unread 才是真正新增素材。本次窗口 unread 累积到 1231 条，全部写完标已读 |
+| `hn-briefing content` 抓 apple.com | 9/10 实测：**产品页可抓**，`https://www.apple.com/iphone-duo/` 返回完整产品文案（规格、发售日期、价格、功能描述），够写头条正文。此前记录的「apple.com 抓不到」只适用于 `apple.com/newsroom` 新闻稿（返回 Page Not Found），产品页与新闻稿要分开判断，别因新闻稿 403 就放弃苹果相关头条 |
+| 一周回顾分页量过大 | 一周窗（`--after` 一周前）总量已到约 5000 条，全量分页很慢。9/10 实测更省的做法：`miniflux entries ... --after <一周前> --before <今天窗口起点>` 只拉窗口前半段，再与今天的两天窗口按 id 合并去重；本次一周段 3096 条即可覆盖 9/3–9/8 的全部主线 |
+
 ---
 
 ## 8. 交付
@@ -383,8 +388,18 @@ all_e = json.load(open('/tmp/mf_all.json'))
 unread = [str(e['id']) for e in all_e if e['status'] == 'unread']
 print(len(unread)); print(' '.join(unread))
 " > /tmp/mark_ids.txt
-IDS=$(tail -1 /tmp/mark_ids.txt)
-miniflux mark $IDS --status read    # 输出 Marked N entries as read 即成功
+# 数量大时按 300 一批分多次 mark，累加每批输出的“Marked N entries as read”里的 N（9/10 实测 1231 条 → 300×4 + 31）
+IDS=$(cat /tmp/mark_ids.txt)
+total=0
+for i in $(seq 0 300 $(($(wc -w < /tmp/mark_ids.txt) - 1))); do
+  chunk=$(echo $IDS | cut -d' ' -f$((i+1))-$((i+300)))
+  [ -z "$chunk" ] && continue
+  out=$(miniflux mark $chunk --status read)   # 输出 Marked N entries as read 即成功
+  echo "$out"
+  n=$(echo "$out" | grep -o '[0-9]\+' | head -1)
+  total=$((total + ${n:-0}))
+done
+echo "TOTAL MARKED: $total"   # 用这个数写 footer 的“已读 N 条”
 ```
 
 ### 9.4 发布前质量检查（标签配对 / 禁句 / 外链）
