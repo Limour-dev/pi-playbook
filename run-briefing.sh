@@ -47,7 +47,7 @@ fi
     "${PI_CMD[@]}" --no-skills \
         --skill "$PLAYBOOK_DIR/.pi/skills/miniflux" \
         --skill "$PLAYBOOK_DIR/.pi/skills/hn-briefing" \
-        --provider axon --model deepseek-v4-flash \
+        --provider axon --model deepseek-flash \
         -p "@$PLAYBOOK_FILE"
     rc=$?
 
