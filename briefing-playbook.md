@@ -100,6 +100,7 @@ miniflux mark <id1> <id2> ... --status read
 - **不要用 `mark --all`**：会误标窗口外的旧未读；仅在确认无窗口外未读时才可考虑。
 - 数量极大（上千条）时按 300 一批分批 mark，累加每批的 `Marked N`（代码见 §9.3）。
 - **标记前重新拉一次最新数据**：写作期间快讯 feed（金十等）会不断进新条目，直接用第一次拉的 id 清单会漏标；footer 的“已读 N 条”以本次实际 `Marked N` 的 N 为准。
+- **「新增素材」与「待标已读」是两个集合**：写作只看 `unread 且 published_at > 昨日终点` 的条目；但标已读时要标窗口内**全部** unread——窗口内、昨日终点之前仍可能有上一轮漏标的 unread（实测 2026-09-11 就有 27 条落在 9 月 9 日 22:37 至昨日终点之间），这些同样要标掉。
 
 ---
 
@@ -269,12 +270,13 @@ miniflux mark <id1> <id2> ... --status read
 | 分页偶发 `fetch failed` / offset 漂移 / 空页 | 瞬时错误重试该页，判空要判断 entries 非空（`json.load` 对空列表也通过）。分页期间快讯会进新条目导致 offset 错位漏页：凌晨窗口稳定、白天执行需在标已读前重拉一次取 unread 并集，或把两天窗与一周窗按 id 合并去重补齐。offset 超出 total 的空页是正常终点，不是网络错误 |
 | 一次性打印数百条标题/正文被截断 | 输出在约 50KB 处静默截断、较旧条目被丢弃，按标题清单扫主线会漏料。按时间段分批打印，或 `title[:60]` 缩短每条 |
 | `hn-briefing top` 偶发 fetch failed / 连到同一 IP 持续 Connect Timeout | 先重试一次；CLI 反复失败时放弃 CLI，改用自写 node 脚本直连 HN API（每请求最多 5 次重试、15s 超时、8 并发，输出结构与 CLI 一致） |
-| `hn-briefing content` 抓不到正文 | 付费墙/反爬/改版站点常返回空或只有导航外壳（bloomberg、guardian、wiley/newscientist、yahoo、sciencealert、openai.com 官方博客与 newsroom 等）。处理顺序：① 导航壳页用 `text.find(标题关键词)` 定位正文起点再截取；② 改由订阅端同日中文报道（cnBeta / AI 聚合 / 财联社 / 风向旗 / MIT 科技评论）补硬数据，标题仍标 HN points/comments；③ 都拿不到就只写标题 + 讨论走向并注明「正文未能抓取」，不编造、不硬凑。视频帖同理：标注「正文为视频」、只写标题与讨论走向。apple.com 要分开判断：**产品页可抓**（规格/价格/发售日齐全），`newsroom` 新闻稿抓不到 |
+| `hn-briefing content` 抓不到正文 | 付费墙/反爬/改版站点常返回空或只有导航外壳（bloomberg、guardian、wiley/newscientist、yahoo、sciencealert、openai.com 官方博客与 newsroom 等）。处理顺序：① 导航壳页用 `text.find(标题关键词)` 定位正文起点再截取；② 改由订阅端同日中文报道（cnBeta / AI 聚合 / 财联社 / 风向旗 / MIT 科技评论）补硬数据，标题仍标 HN points/comments；③ 都拿不到就只写标题 + 讨论走向并注明「正文未能抓取」，不编造、不硬凑。视频帖同理：标注「正文为视频」、只写标题与讨论走向。apple.com 要分开判断：**产品页可抓**（规格/价格/发售日齐全），`newsroom` 新闻稿抓不到。**Mastodon/mathstodon 实例（如 HN 头条常客 mathstodon.xyz）返回 `text` 为空**（JS 渲染），直接走 ②/③：这类帖多为数学家的短评，用订阅端同日报道 + HN 标题即可成稿 |
 | 头条选择（rank 1 分低无正文 / 跨天榜单几乎不变 / 榜单被旧帖霸榜） | 不盲从 rank 1：按 **points/comments + 正文可抓取性 + 与订阅交叉印证程度**选帖，优先「昨日简报执行终点之后新提交」的帖，通常是 rank 2 或更高。**判定昨日终点别按 cron 的 06:00 假定**：取窗口内 `status=='read'` 的最新 `published_at` 即为昨日执行终点，其后未读才是真正新增素材。已当过昨日头条/背景的旧帖一律排除，即使分数继续涨（如次日 1802→1944 分）；同一事件多帖霸榜时合并为一条头条叙事：取最高分帖为题、stats 注明同事件另一帖、正文并列双方口径 |
 | HN 帖标题被改写 / 分数日内变动 | HN 会改写标题、跨天旧帖分数可大涨，同一天两次 `top 100` 也 rank 互换、points 微涨，个别帖可能被 flag/重置分数暴跌。按标题 + URL 识别同一帖，一律引用**最后一次拉取**的 points/comments，rank 号仅作参考（写简报前再拉一次）。榜尾帖（rank 90+）可能掉出前 100，已掉榜帖用首次拉取值或省略分数；`top 100` 偶返回 99 条、个别 Ask/文本帖无 `url` 键属正常，解析用 `x.get('url','')` |
 | 用户说「太 AI 了」 | 见 §4.4：检查是否用了「不是…而是…」、空泛比喻、跳跃式总结句，改为平实因果陈述 |
 | 远端 `index.html` 指向旧的 / 不确定是否推送成功 | 见 §8.1：先 `find -type l -delete` 清掉所有软链接再 `ln -sf 最新文件 index.html`；以两端 MD5 一致为成功标准 |
-| 当天已有同日期成品 / cron 正在并行跑 | 先看 `briefing-playbook/` 成品时间戳、`run-YYYY-MM-DD.log`、`ps aux \| grep run-briefing`；手动会话不持 flock、可与 cron 并行 → 推送后等其结束再核一次远端 MD5，被覆盖就重推 |
+| 当天已有同日期成品 / cron 正在并行跑 | 先看 `briefing-playbook/` 成品时间戳、`run-YYYY-MM-DD.log`、`ps aux \| grep run-briefing`；手动会话不持 flock、可与 cron 并行 → 推送后等其结束再核一次远端 MD5，被覆盖就重推。**`ps aux \| grep run-briefing` 抓不到正在跑的 cron**（脚本名不出现在进程表里）：改用 `lsof briefing-playbook/run-$(date +%F).log`，持有者是 `bash`→`npm exec`→`sh`→`pi` 即说明 cron 在跑；日志在 06:00 之后仍持续增长（`wc -c` 多次递增、内容是 `[pi-trace-id]` 块）同样是证据 |
+| 自己就是 cron 拉起的进程 | 若父进程链是 `bash`→`npm exec …pi`→`pi`、且持有 `run-YYYY-MM-DD.log`，说明本次会话就是 `run-briefing.sh` 的 `-p @playbook` 运行（flock 已由自己持有）：直接执行到底，不要等 cron、不要重跑、也不要按「手动会话可与 cron 并行」去反复核 MD5 |
 | cron 跑完无产出 | 三种表现都按「未执行」处理、放心手动跑：① 日志只有 header；② 日志是「你贴了手册但没说要做什么」的提问式输出（agent 把 `-p @file` 当成未给任务就退出 exit=0）；③ 连 `run-YYYY-MM-DD.log` 都没生成。**以「日志里有没有执行痕迹/成品文件」为准，别被非空日志骗了**，判定顺序先 `ls briefing-playbook/run-$(date +%F).log`。cron 失败会把新增窗口拉长成「昨日终点 → 现在」（可超 30 小时，unread 累积上千条），判定昨日终点仍用窗口内已读条目的 `max(published_at)`。手动 scp 会覆盖 cron 留下的同名空文件，推送后再核一次 MD5 |
 | 同一订阅事件跨天状态反转 / 连续剧式进展 | 写作前先读昨日简报对应段落，反转写成「同一事件的最新一轮交锋」并并列双方说法；连续剧事件围绕新角度展开，不复述昨天内容 |
 | 质量检查脚本打印的 `len(html)` | 是字符数不是 UTF-8 字节数（12760 字符 ≈ 23354 字节），与 scp 文件大小对比时别误读 |
