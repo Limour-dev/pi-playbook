@@ -2,6 +2,8 @@
 
 > 记录 2026-09-15 给 `pi-trace-id` 瘦身 880 MB 的过程：一个 `peerDependenciesMeta` 标记
 > 让安装占用从 440 MB/份降到 0，以及 pi 两条安装路径参数不一致这个上游 bug。
+> 同日又在 `pi-jupyter`（有真实运行时依赖 `@jupyterlab/services`）上复核了同一套手法，
+> 补进 `.npmrc` 两条反例（§5.2）与"消费者裸装"这第四条验证路径（§5.3 / §6.1）。
 
 ## 1. 结论速查（TL;DR）
 
@@ -9,8 +11,11 @@
   否则 `pi install git:...` 会给每个包额外装一份 ~440 MB 的 `@earendil-works/pi-coding-agent`。
 - 宿主类型包若只为 `npm run typecheck` / IDE 补全存在，放 `devDependencies`，不要放 `dependencies`。
 - 只做 `import type` 的扩展**运行时零依赖**，安装应该接近 0 字节。若装出几百 MB，一定是配置错了。
-- 仓库根的 `.npmrc` 里 `legacy-peer-deps=true` + `omit=optional` 是便宜的兜底（顺手跳过 esbuild 的
-  26 个预编译平台二进制，约 284 MB）。
+- 仓库根的 `.npmrc`（`legacy-peer-deps` + `omit=optional`）**不是免费兜底**：前者会让 npm 停止为
+  自己依赖树里的 peer 解析、可能把 lockfile 里的包删掉，后者会打断 rollup / esbuild 的本地构建。
+  先看 §5.2，多数情况下**不加**，只留 `peerDependenciesMeta`。
+- 判定修复是否有效，要跑**消费者裸装**路径（`npm i <tgz>`，不带任何 flag，见 §6.1）：git 安装路径
+  常被 `devDependencies` 巧合兜底而显得本来就正常。
 - 发布用 **npm Trusted Publishing（OIDC）**，不需要任何 `NPM_TOKEN` secret。
 
 ## 2. 背景
@@ -99,15 +104,28 @@ getGitDependencyInstallArgs() {
 `optional: true` 后，npm/bun/pnpm **任何路径都不会自动装它**，pi 传不传 `--legacy-peer-deps` 都无所谓。
 `devDependencies` 里留一份，本地类型检查与补全照常，消费者不会安装。
 
-### 5.2 .npmrc（兜底，可选但便宜）
+### 5.2 .npmrc（**别照抄，先看下面两条反例**）
 
 ```ini
 legacy-peer-deps=true
 omit=optional
 ```
 
-git 安装路径是 `cd <clone> && npm install`，会读到仓库根的 `.npmrc`，所以这层能生效。
-`omit=optional` 跳过 esbuild 的平台包，让本地开发也少 284 MB。
+git 安装路径是 `cd <clone> && npm install`，会读到仓库根的 `.npmrc`，所以这层**能**生效。
+但两行都不是免费的，当天在 `pi-jupyter` 上复核时都踩到了：
+
+- `legacy-peer-deps=true` 会让 npm 停止为**本仓库自己的真实依赖**解析 peer，lockfile 随之改变。
+  `pi-jupyter` 依赖 `@jupyterlab/services`，树里有 `@jupyterlab/settingregistry`（它和它依赖的 `@rjsf/utils`
+  都声明了 peer `react`）；加上这行后 `npm install --package-lock-only` 直接把 `node_modules/react` 从 lock 里删掉了。
+  加之前务必 `git diff package-lock.json` 看清代价。
+- `omit=optional` 会**打断本地开发工具链**：`rollup` / `esbuild` 的平台二进制
+  （`@rollup/rollup-linux-x64-gnu`、`@esbuild/*`）正是声明的 `optionalDependencies`，省掉之后
+  `vitest run` 直接 `MODULE_NOT_FOUND: rollup/dist/native.js`，`tsup` 同样起不来。
+  而它对**分发体积**的贡献常常是 0（宿主副本问题由 `peerDependenciesMeta` 独立解决），所以多数情况下正确做法是**不写**。
+
+结论：**`peerDependenciesMeta.optional` 是唯一必需项**；`.npmrc` 只在同时满足
+①`git diff package-lock.json` 无明显副作用 ②`npm run typecheck && npm test && npm run build` 全绿
+时才留下。`pi-jupyter` 最终的选择是：不加 `.npmrc`，只留 `peerDependenciesMeta`。
 
 ### 5.3 实测对照
 
@@ -122,6 +140,24 @@ pi install git:...     434 MB  →  0
 
 **验证过：光靠 `peerDependenciesMeta.optional` 就够了** —— 把 `.npmrc` 排除掉再跑一遍 git 路径，
 同样是 0。`.npmrc` 只是额外的保险。
+
+同一天在 `pi-jupyter`（真实运行时依赖 `@jupyterlab/services`，不是零依赖扩展）上复核：
+
+```
+                                 改前              改后
+npm path, pi 参数(--legacy-peer-deps)   29 MB      →   29 MB
+npm path, 裸 `npm i <tgz>`              564 MB     →   29 MB   （改前含 pi-coding-agent 434 MB）
+git path (clone + npm i --omit=dev)     29 MB *    →   29 MB
+```
+
+* 改前 git 路径看着干净是**假象**，真因是 package.json 里同一批 peer 也列在 `devDependencies`，
+  `npm install --omit=dev` 先把 peer 解析到那个 dev 条目、再随 dev 一起 omit 掉，属于巧合而非配置正确。
+  所以**别用 git 路径的干净结果判定修复有效**，必须跑 §6 的第四条路径。
+
+改后 29 MB 全部是 `@jupyterlab/services` 的真实依赖树（lodash / yjs / ajv / `@lumino/*`…；
+git 路径下还会多一个 peer `react`，npm 路径因 `--legacy-peer-deps` 不带它 —— 两种树都能正常
+`import("@jupyterlab/services")`，实测均通过）：
+`node_modules/@earendil-works` 不存在（0 个包），tarball 20 文件 / 57 KB。
 
 ## 6. 验证方法（复用套路）
 
@@ -144,6 +180,29 @@ npm install "$T"/*.tgz --prefix "$T/root" --legacy-peer-deps --no-audit --no-fun
 du -sh "$T/root/node_modules"                     # 期望：几十 KB
 
 rm -rf "$T"
+```
+
+### 6.1 第四条路径：消费者裸装（**最容易漏、也最能暴露问题**）
+
+```bash
+# 不带 --legacy-peer-deps，也就是消费者自己 `npm i <pkg>` 的真实路径
+mkdir -p "$T/e" && (cd "$T/e" && npm init -y >/dev/null)
+npm install "$T"/*.tgz --prefix "$T/e" --no-audit --no-fund --loglevel=error
+du -sh "$T/e/node_modules"
+ls "$T/e/node_modules/@earendil-works" 2>/dev/null    # 期望：不存在
+```
+
+为什么必须有这一条：pi 的 npm 路径自带 `--legacy-peer-deps`，git 路径又可能被
+`devDependencies` 巧合兜底（§5.3 的星号），两者都会"看起来正常"。
+**只有这条路径每次都复现 400 MB 量级的宿主副本**（本机 `pi-jupyter` 改前复现出 564 MB / 434 MB）。
+
+### 6.2 改动后必跑的回归
+
+```bash
+npm install --package-lock-only   # 同步 lockfile 的 packages[""]，否则 npm ci 与 package.json 漂移
+git diff package-lock.json        # 看清有没有顺手删掉别的包（如 react）
+npm install                       # 干净目录，验证 .npmrc 没打断 esbuild / rollup 平台包
+npm run typecheck && npm test && npm run build
 ```
 
 其他检查：
@@ -197,7 +256,18 @@ GitHub 对含 `.github/workflows/` 的提交，用 HTTPS + PAT 推送时要求 t
 ## 8. 其他坑
 
 - `npm pack` 会把 tarball 落在**当前目录**（不是 `/tmp`），记得 `--pack-destination` 或事后清理。
-- `omit=optional` 不能写进 `.npmrc` 就算完 —— 它同时影响开发环境，若依赖里有必需的可选包要慎用。
+- `omit=optional` 会顺手废掉本地工具链：rollup / esbuild 的平台二进制（`@rollup/rollup-linux-x64-gnu`、
+  `@esbuild/*`）本身就是 `optionalDependencies`，省略后 `vitest run` 报 `MODULE_NOT_FOUND: rollup/dist/native.js`。
+  若仓库里没有*运行时*的可选依赖，这条 flag 对分发体积的贡献是 0，别加。
+- `legacy-peer-deps=true` 会让 npm 停止为**你自己依赖树里的 peer** 解析，lockfile 可能被删条目
+  （`pi-jupyter`：`@jupyterlab/settingregistry` / `@rjsf/utils` 的 peer `react` 被删）。加完必须
+  `git diff package-lock.json`，并补跑 `npm ci` 语义的验证。
+- 同一批 peer 同时出现在 `devDependencies` 会**伪装成"git 路径本来就没问题"**：`npm install --omit=dev`
+  先把 peer 解析到那个 dev 条目、再随 dev 一起 omit。所以干净结果不能作为修复有效的证据（见 §6.1）。
+- `package-lock.json` **不进 tarball、也不参与消费者安装**（`pi-jupyter` tarball 实测 20 文件 / 57 KB，
+  无 lock、无 `.npmrc`、无 `.github`）：本地有 lock 时的干净结果不代表消费者，消费者走的是无 lock 裸解析。
+- 改完 `peerDependencies` / `peerDependenciesMeta` 记得 `npm install --package-lock-only`，把
+  `packages[""]` 里的 `peerDependenciesMeta` 同步进 lockfile（实测只 +14 行），否则 `npm ci` 与 package.json 漂移。
 - 清残留时不要只删 `node_modules`：pi 的 `~/.pi/agent/git/**` 下每个装过的包都可能有一份，
   用 `find ~/.pi/agent/git -maxdepth 4 -name node_modules -type d` 一次性查全。
 - 别去删 `~/.npm/_npx/<hash>/node_modules` —— 那是 pi 自身的运行实体（本机 999 MB），删了 pi 跑不起来。
