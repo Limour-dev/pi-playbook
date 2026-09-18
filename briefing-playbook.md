@@ -104,6 +104,7 @@ miniflux mark <id1> <id2> ... --status read
 - 数量极大（上千条）时按 300 一批分批 mark，累加每批的 `Marked N`（代码见 §9.3）。
 - **标记前重新拉一次最新数据**：写作期间快讯 feed（金十等）会不断进新条目，直接用第一次拉的 id 清单会漏标；footer 的“已读 N 条”以本次实际 `Marked N` 的 N 为准。
 - **「新增素材」与「待标已读」是两个集合**：写作只看 `unread 且 published_at > 昨日终点` 的条目；但标已读时要标窗口内**全部** unread——窗口内、昨日终点之前仍可能有上一轮漏标的 unread（实测 2026-09-11 就有 27 条落在 9 月 9 日 22:37 至昨日终点之间），这些同样要标掉。
+- **窗口内 unread 已为 0 属正常情况**：同一天若已有另一次同任务运行（含被中断的）把窗口标读完，标记前重拉会得到 `total: 0`，此时不要空转也不要重造数据。footer 改写为「窗口内 N 条（含已读与未读）均为已读；本次运行无待标记的未读条目」，并在汇报里说明标记是前一次运行完成的（判定见 §7「当天已有同日期成品」行）。
 
 ---
 
@@ -282,6 +283,8 @@ miniflux mark <id1> <id2> ... --status read
 | 当天已有同日期成品 / cron 正在并行跑 | 先看 `briefing-playbook/` 成品时间戳、`run-YYYY-MM-DD.log`、`ps aux \| grep run-briefing`；手动会话不持 flock、可与 cron 并行 → 推送后等其结束再核一次远端 MD5，被覆盖就重推。**`ps aux \| grep run-briefing` 抓不到正在跑的 cron**（脚本名不出现在进程表里）：改用 `lsof briefing-playbook/run-$(date +%F).log`，持有者是 `bash`→`npm exec`→`sh`→`pi` 即说明 cron 在跑；日志在 06:00 之后仍持续增长（`wc -c` 多次递增、内容是 `[pi-trace-id]` 块）同样是证据 |
 | 自己就是 cron 拉起的进程 | 若父进程链是 `bash`→`npm exec …pi`→`pi`、且持有 `run-YYYY-MM-DD.log`，说明本次会话就是 `run-briefing.sh` 的 `-p @playbook` 运行（flock 已由自己持有）：直接执行到底，不要等 cron、不要重跑、也不要按「手动会话可与 cron 并行」去反复核 MD5 |
 | cron 跑完无产出 | 五种表现都按「未执行」处理、放心手动跑：① 日志只有 header；② 日志是「你贴了手册但没说要做什么」的提问式输出（agent 把 `-p @file` 当成未给任务就退出 exit=0）；③ 连 `run-YYYY-MM-DD.log` 都没生成；④ **日志有 `[pi-trace-id]` 块、末尾是 `Connection error.`、结尾行 `执行结束 exit=1`**（provider 侧连接失败，发生在 06:00 刚起跑时，实测 2026-09-12）；⑤ **同样结构但末尾是 `Request timed out.`**（同一个 provider 侧故障的另一副面孔，2026-09-13 实测）。**以「日志里有没有执行痕迹/成品文件」为准，别被非空日志骗了**，判定顺序先 `ls briefing-playbook/run-$(date +%F).log`。cron 失败会把新增窗口拉长成「昨日终点 → 现在」（可超 30 小时，unread 累积上千条；2026-09-13 手动补跑时窗口为 9-12 10:48 之后约 26 小时、409 条新增 unread），判定昨日终点仍用窗口内已读条目的 `max(published_at)`。手动 scp 会覆盖 cron 留下的同名空文件，推送后再核一次 MD5 |
+| 当天成品被中断（footer 留着 `__MARKED__` 占位符、未推送） | 判定：成品 mtime 比本次执行起点早几十秒到几分钟、当日日志只有本次那一条 header（`>>` 追加，只有一条说明当天此前没跑完过）、`lsof briefing.lock` 的持有者就是自己（无并行任务）。**不重写，做四项校验后补完**：① 抽出成品里全部 5–6 位 miniflux id，逐个校验是否在窗口 dump 里且标题与陈述一致（实测 2026-09-18：引用 119 个 id 全部命中）② 用最新 `top 100` 复核并更新正文引用的每条 HN 分数（实测 12 条上浮，如头条 177→185 分/49→52 评）③ 跑 §9.4 QA（含 `__MARKED__`）④ 按 §3 改写 footer、推送。整套约十分钟，比重写整篇快得多 |
+| 正文里的具体数字／细节无法溯源 | 用「全窗口正文语料 grep」判定：`miniflux entries --status read,unread --after <起点> --before <终点> --limit 200 --compact --plain-text` 全量分页拉正文（两天窗 1688 条约 9 次请求、一周窗 3070 条约 16 次，几秒钟），落盘后本地 grep 关键词。grep 不到即视为无法溯源，改写为可验证的等价表述（实测 2026-09-18：成品里的「欧洲央行存款机制利率升至 2.5%」「英国央行连续第六次维持」在两周窗 4758 条正文里均无出处，改成「维持 3.75% 不变、投票 6 比 3」；同期抽查的 CPI 3.4%／核心 2.4%、美联储 12 比 0 加息至 3.75–4.00%、点阵图 18 人中 16 人、日本央行 7 比 2、澳洲联储＋瑞银两次加息全部命中）。注意 `--compact` 单独用时 `content` 字段为空（§9.1 的 dump 因此不含正文），拉正文必须加 `--plain-text` |
 | 同一订阅事件跨天状态反转 / 连续剧式进展 | 写作前先读昨日简报对应段落，反转写成「同一事件的最新一轮交锋」并并列双方说法；连续剧事件围绕新角度展开，不复述昨天内容 |
 | 质量检查脚本打印的 `len(html)` | 是字符数不是 UTF-8 字节数（12760 字符 ≈ 23354 字节），与 scp 文件大小对比时别误读 |
 | `miniflux search <关键词>` 查不到明明存在的条目 | search 不覆盖全部聚合源条目（实测 2026-09-15 搜「敬一丹」返回 0 结果，但十年之约聚合里确有其条目，同批搜「董建华」正常返回 3 条）。**因此不能用 search 的 0 结果反推「只有单一来源」**，也不能靠 search 找窗口内素材，一律以窗口 dump（`/tmp/mf_all.json`）为准。博客聚合里的讣告/死讯类单来源标题（无任何新闻源印证）按存疑处理、不写入简报 |
@@ -356,6 +359,8 @@ print('total:', len(all_e))
 for k, v in Counter(e['feed']['title'] for e in all_e).most_common(): print(f'{v:4d}  {k}')
 ```
 
+**核正文用 `--compact --plain-text`**：§9.1 的 dump 用 `--compact`，`content` 字段是空的（只有 id/title/feed/status/时间），只能用于按 feed 分组、看标题和筛 unread id。要核对正文事实（数字、细节是否真在窗口内有出处），改用同一条分页逻辑、把 `--compact` 换成 `--compact --plain-text` 再拉一份（两天窗 1688 条约 9 次请求、一周窗 3070 条约 16 次，几秒钟），落盘成 `/tmp/mf_pt.json`、`/tmp/mf_week_pt.json` 后在本地 grep 关键词，比逐条 `miniflux entry <id>` 快两个数量级（判定规则见 §7「正文里的具体数字／细节无法溯源」行）。
+
 ### 9.2 读正文（去 HTML 标签）
 
 ```bash
@@ -399,7 +404,7 @@ html = open('briefing-YYYY-MM-DD.html').read()
 for tag in ['div', 'span', 'b', 'h3', 'h4', 'p', 'footer']:
     o = len(re.findall(r'<%s[\s>]' % tag, html)); c = len(re.findall(r'</%s>' % tag, html))
     assert o == c, f'{tag} {o}/{c} MISMATCH'
-for bad in ['不是…而是…', '硬币的两面', '把镜头拉远']:
+for bad in ['不是…而是…', '硬币的两面', '把镜头拉远', '__MARKED__']:
     assert bad not in html, bad
 assert not re.findall(r'不是[^，。；\n]{0,14}[，,][^。；\n]{0,14}而是', html), '不是X，而是Y 句式！'
 assert not re.findall(r'https?://[^"]+', html), '外部资源！'
