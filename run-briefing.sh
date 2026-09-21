@@ -4,23 +4,23 @@
 # 定时：cron 每天早上 6:00 执行（0 6 * * *）
 # 功能：
 #   1. 用 pi-agent（非交互 -p）执行 briefing-playbook.md
-#   2. 只加载 miniflux + hn-briefing 两个技能（项目级 .pi/skills/ 下，--no-skills + --skill）
+#   2. 只加载 miniflux + hn-briefing 两个技能（项目级 .agents/skills/ 下，--no-skills + --skill）
 #   3. 工作目录 = pi-playbook（与 playbook 内相对路径一致），执行日志/错误输出到 briefing-playbook/
 # ============================================================
 set -uo pipefail
 
-PLAYBOOK_DIR="/home/limour/pi-playbook"
+PLAYBOOK_DIR="/root/pi-playbook"
 BRIEFING_DIR="$PLAYBOOK_DIR/briefing-playbook"
 PLAYBOOK_FILE="$PLAYBOOK_DIR/briefing-playbook.md"
 # pi 通过 micromamba 环境的 npx 解析，避免 pi 更新后 ~/.npm/_npx/<hash> 路径失效
-PI_CMD=(/home/limour/micromamba/envs/pi/bin/npx --yes @earendil-works/pi-coding-agent pi)
+PI_CMD=(/root/micromamba/envs/pi/bin/npx --yes @earendil-works/pi-coding-agent pi)
 
 # 1) 载入用户环境（MINIFLUX_URL/MINIFLUX_API_KEY、BRAVE_API_KEY、PATH 等）
 #    cron 环境很干净，必须显式 source
 [ -f "$HOME/.config/ai-env.sh" ] && . "$HOME/.config/ai-env.sh"
 
 # 2) 技能 bin + node（pi 的 shebang 需要）加入 PATH；ai-env.sh 会重置 PATH，所以必须放在 source 之后
-export PATH="/home/limour/micromamba/envs/pi/bin:$PLAYBOOK_DIR/.pi/skills/miniflux/bin:$PLAYBOOK_DIR/.pi/skills/hn-briefing/bin:$PATH"
+export PATH="/root/micromamba/envs/pi/bin:$PLAYBOOK_DIR/.agents/skills/miniflux/bin:$PLAYBOOK_DIR/.agents/skills/hn-briefing/bin:$PATH"
 
 mkdir -p "$BRIEFING_DIR"
 cd "$PLAYBOOK_DIR" || exit 1
@@ -45,8 +45,8 @@ fi
 
     # 4) 用 pi-agent 执行 playbook：只保留 miniflux 与 hn-briefing 技能
     "${PI_CMD[@]}" --no-skills \
-        --skill "$PLAYBOOK_DIR/.pi/skills/miniflux" \
-        --skill "$PLAYBOOK_DIR/.pi/skills/hn-briefing" \
+        --skill "$PLAYBOOK_DIR/.agents/skills/miniflux" \
+        --skill "$PLAYBOOK_DIR/.agents/skills/hn-briefing" \
         --provider axon --model deepseek-flash \
         -p "@$PLAYBOOK_FILE"
     rc=$?

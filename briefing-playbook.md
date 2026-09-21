@@ -20,17 +20,17 @@
 
 ## 1. 环境准备
 
-两个技能是唯一入口，都在项目级 `.pi/skills/` 目录下（`/home/limour/pi-playbook/.pi/skills/`，只在项目目录内运行时加载）：
+两个技能是唯一入口，都在项目级 `.agents/skills/` 目录下（`/root/pi-playbook/.agents/skills/`，只在项目目录内运行时加载）：
 
 ```bash
-export PATH="/home/limour/pi-playbook/.pi/skills/miniflux/bin:$PATH"
-export PATH="/home/limour/pi-playbook/.pi/skills/hn-briefing/bin:$PATH"
+export PATH="/root/pi-playbook/.agents/skills/miniflux/bin:$PATH"
+export PATH="/root/pi-playbook/.agents/skills/hn-briefing/bin:$PATH"
 
 miniflux healthcheck          # 应输出 healthy
 miniflux me                   # 当前用户
 ```
 
-- 首次执行前**先读两个技能的 SKILL.md**（`.pi/skills/miniflux/SKILL.md`、`.pi/skills/hn-briefing/SKILL.md`），它们描述了全部命令。所有命令输出 JSON 到 stdout。
+- 首次执行前**先读两个技能的 SKILL.md**（`.agents/skills/miniflux/SKILL.md`、`.agents/skills/hn-briefing/SKILL.md`），它们描述了全部命令。所有命令输出 JSON 到 stdout。
 - **项目信任**：项目技能只在项目被信任后才被发现（交互模式会询问，可用 `/trust` 保存；非交互 `-p` 默认不信任，需 `--approve`）。`run-briefing.sh` 用 `--no-skills --skill <绝对路径>` 显式加载，**不受信任门控影响**（已实测）。
 
 ---
@@ -333,7 +333,7 @@ md5sum briefing-playbook/briefing-YYYY-MM-DD.html
 - 更新后 git 提交（playbook 文件已被跟踪，`briefing-playbook/` 目录被 `.gitignore` 忽略，无需提交简报文件）：
 
 ```bash
-cd /home/limour/pi-playbook && git add briefing-playbook.md && git commit -m "docs: 更新简报 playbook（<一句本次经验>）"
+cd /root/pi-playbook && git add briefing-playbook.md && git commit -m "docs: 更新简报 playbook（<一句本次经验>）"
 ```
 
 - 无新经验则跳过，不强行改动。
@@ -345,7 +345,7 @@ cd /home/limour/pi-playbook && git add briefing-playbook.md && git commit -m "do
 ### 9.1 拉取两天窗口数据（探 total 全量分页）+ 按 feed 统计
 
 ```bash
-export PATH="/home/limour/pi-playbook/.pi/skills/miniflux/bin:$PATH"
+export PATH="/root/pi-playbook/.agents/skills/miniflux/bin:$PATH"
 ```
 
 ```python
