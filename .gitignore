@@ -144,3 +144,6 @@ vite.config.ts.timestamp-*
 
 # Ignore all folders
 */
+
+# pi skill lockfile (本地生成)
+skills-lock.json
