@@ -145,5 +145,8 @@ vite.config.ts.timestamp-*
 # Ignore all folders
 */
 
+# 本地 agent 资产（skills/配置，不入库）
+.agents/
+
 # pi skill lockfile (本地生成)
 skills-lock.json
