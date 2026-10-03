@@ -27,8 +27,16 @@ cd "$PLAYBOOK_DIR" || exit 1
 
 LOG_FILE="$BRIEFING_DIR/run-$(date +%Y-%m-%d).log"
 LOCK_FILE="$BRIEFING_DIR/briefing.lock"
+TODAY=$(date +%F)
+TODAY_BRIEFING="$BRIEFING_DIR/briefing-$TODAY.html"
 
-# 3) 防重入：上一次还没跑完（如生成/推送耗时过长）就跳过本次
+# 3) 幂等：今天的简报已经生成过就跳过，避免重复生成（想强制重跑先删掉该文件）
+if [ -s "$TODAY_BRIEFING" ]; then
+    echo "[$(date '+%F %T')] 今天的简报已存在（$TODAY_BRIEFING），本次跳过" >> "$LOG_FILE"
+    exit 0
+fi
+
+# 4) 防重入：上一次还没跑完（如生成/推送耗时过长）就跳过本次
 exec 9>"$LOCK_FILE"
 if ! flock -n 9; then
     echo "[$(date '+%F %T')] 上次执行尚未结束，本次跳过" >> "$LOG_FILE"
@@ -43,7 +51,7 @@ fi
     echo "playbook: $PLAYBOOK_FILE"
     echo "============================================================"
 
-    # 4) 用 pi-agent 执行 playbook：只保留 miniflux、hn-briefing 与 polymarket 技能
+    # 5) 用 pi-agent 执行 playbook：只保留 miniflux、hn-briefing 与 polymarket 技能
     "${PI_CMD[@]}" --no-skills \
         --skill "$PLAYBOOK_DIR/.agents/skills/miniflux" \
         --skill "$PLAYBOOK_DIR/.agents/skills/hn-briefing" \
