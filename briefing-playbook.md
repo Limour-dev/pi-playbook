@@ -1,7 +1,8 @@
 # 每日简报生成手册（Daily Briefing Playbook）
 
-> 本手册写给任何新的 agent。读完全文即可独立完成"订阅 + HN 融合简报"的生成与发布，满足用户的全部要求。本手册总结了历次迭代中用户明确提出的偏好与踩过的坑，**优先级高于一般直觉**。
+> 本手册写给任何新的 agent。读完全文即可独立完成"订阅 + HN + Polymarket 融合简报"的生成与发布，满足用户的全部要求。本手册总结了历次迭代中用户明确提出的偏好与踩过的坑，**优先级高于一般直觉**。
 > 当用户贴出这份手册，未指定其他任务时，即为执行该手册。
+> 简报里不附加 EntryID
 
 ---
 
@@ -11,6 +12,8 @@
 
 > "总结我订阅最近两天的消息，结合 HN 简报，生成一份简报 HTML 以便发布。"
 
+- **三个数据源（用户明确要求）**：订阅聚合 + Hacker News + Polymarket 预测市场热点。三者按主题彻底融合进同一段，Polymarket 不做与订阅/HN 并列的来源分节（融合规则见 §4.2，赔率写法见 §4.3/§4.5）。
+
 - **交付物**：一个自包含、可直接发布的 HTML 文件（内联 CSS，无外部依赖），命名 `briefing-YYYY-MM-DD.html`，放在 `briefing-playbook/` 文件夹下（与 playbook 同名的文件夹）。
 - **发布**：每次生成后推送到服务器 b 的 `~/base/NGPM/data/briefing/`，远端 `index.html` 软链接始终指向最新一篇（详见 §8.1）。
 - **执行方式（用户明确要求）**：从数据获取 → 写作 → 标记已读 → 质量检查 → 发布校验 → 经验沉淀（§8.2），是**一次操作**，中间不向用户请求确认，直接执行到底；只有出错（抓取失败/推送失败）才停下报告。
@@ -19,18 +22,20 @@
 
 ## 1. 环境准备
 
-两个技能是唯一入口，都在项目级 `.agents/skills/` 目录下（`/root/pi-playbook/.agents/skills/`，只在项目目录内运行时加载）：
+三个技能是唯一入口，都在项目级 `.agents/skills/` 目录下（`/root/pi-playbook/.agents/skills/`，只在项目目录内运行时加载）：
 
 ```bash
 export PATH="/root/pi-playbook/.agents/skills/miniflux/bin:$PATH"
 export PATH="/root/pi-playbook/.agents/skills/hn-briefing/bin:$PATH"
+export PATH="/root/pi-playbook/.agents/skills/polymarket/bin:$PATH"
 
 miniflux healthcheck          # 应输出 healthy
 miniflux me                   # 当前用户
+polymarket events --open --limit 1   # 应输出 {count, events}，验证 polymarket CLI 可用
 ```
 
-- 首次执行前**先读两个技能的 SKILL.md**（`.agents/skills/miniflux/SKILL.md`、`.agents/skills/hn-briefing/SKILL.md`），它们描述了全部命令。所有命令输出 JSON 到 stdout。
-- **项目信任**：项目技能只在项目被信任后才被发现（交互模式会询问，可用 `/trust` 保存；非交互 `-p` 默认不信任，需 `--approve`）。`run-briefing.sh` 用 `--no-skills --skill <绝对路径>` 显式加载，**不受信任门控影响**（已实测）。
+- 首次执行前**先读三个技能的 SKILL.md**（`.agents/skills/miniflux/SKILL.md`、`.agents/skills/hn-briefing/SKILL.md`、`.agents/skills/polymarket/SKILL.md`，polymarket 的详细命令/字段见其 `references/usage.md`），它们描述了全部命令。所有命令输出 JSON 到 stdout。
+- **项目信任**：项目技能只在项目被信任后才被发现（交互模式会询问，可用 `/trust` 保存；非交互 `-p` 默认不信任，需 `--approve`）。`run-briefing.sh` 用 `--no-skills --skill <绝对路径>` 显式加载三个技能，**不受信任门控影响**（已实测）。
 
 ---
 
@@ -62,7 +67,30 @@ hn-briefing content "<url>"    # 抓取头条正文，返回 {title, text}
 - **Mastodon 帖优先改抓其链出的独立站点**：HN 头条常是 mathstodon.xyz 这类实例的短帖（正文抓不到），但帖子里通常链有独立声明站点（实测 2026-09-12 头条 `A misalignment of AI in mathematics` → `mathandai.org` 抓取成功，拿到完整公开信正文）。直接抓站点 URL，stats 标明来源站点，比走「订阅端同日报道」更硬。
 - 正文抓取失败时按 §7「正文抓取」的处理顺序退回，**不要编造内容**。
 
-### 2.3 阅读正文的策略
+### 2.3 Polymarket 热点数据
+
+```bash
+# 热点事件榜：默认输出就带每个事件的全部子市场与赔率（markets[].outcomeTokens）
+polymarket events --open --order volume24hr --exclude-tag sports --min-liquidity 50000 --limit 20 > /tmp/pm_hot.json
+
+polymarket event <event-slug> --fields id,title,slug,volume24hr,liquidity,endDate,closed,markets   # 单事件全量
+polymarket price <market-slug> --outcome Yes           # 单市场：bid/ask/midpoint/spread/lastTradePrice
+polymarket history <market-slug> --interval 1w         # 只取 first/last 算一周变化（points 可能上千点）
+polymarket search "<关键词>" --limit 5                 # 按主题找市场（events[].markets[] 直接带赔率）
+```
+
+**关键坑（务必遵守）：**
+
+1. **默认按 `volume24hr` 排序会被体育盘口霸榜**（足球、棒球、Dota2 单场常占前几名，24 小时成交额达数百万美元）。必须加 `--exclude-tag sports`，再加 `--min-liquidity 50000` 滤掉薄盘；想按主题看用 `--tag politics` / `--tag crypto` / `--tag geopolitics`（slug 会先解析成数字 id）。
+2. **不要给 `events` 加 `--fields` / `--brief`**：会丢掉 `markets[]`，只剩事件级字段，拿不到赔率。要赔率就用默认输出的 `events` 列表（一次请求带全部子市场），或对单个事件用 `event <slug>`（`--fields` 时要显式带上 `markets`）。
+3. **`search` 加 `--fields` 会返回 `{}`**：search 的信封是 `{events,tags,profiles}`，投影不存在的顶层字段会把内容全部丢掉。要精简在本地 python 里取字段。
+4. **赔率是 0–1 的概率**：`outcomeTokens[].price` 是最近成交价（`0.075` = 7.5%），`bestBid`/`bestAsk` 是挂单最优价，两者可能不一致（实测同一市场 `price 0.0005` 而 `ask 0.001`）。要精确中点用 `polymarket price <market-slug>` 的 `midpoint`，简报里注明用的是哪种口径。**三者都可能是 `null`**（薄盘无成交或无挂单，实测巴西大选盘大量候选为 `price: null`），`null` 不能写成 0、也不能直接参与算术（会 `TypeError`）。
+5. **多市场事件不能直接 `price <event>`**：会报错并列出候选（含每个市场的 bid/ask）。此时用 `event <slug>` 拿全，或 `--market <n|slug>` 指定第 n 个（1 起）。
+6. **引用前检查 `closed` / `endDate`**：只写仍在交易的市场；已结束或已结算的盘口只在它本身构成当天新闻时作为「结果」引用。
+7. **赔率与榜单变动快**：和 HN 分数一样，发布前重跑一次热点榜复核文中引用的每条赔率/成交量（见 §7「Polymarket 数据」）。
+8. 只读、无需 API key、零依赖；限流为 IP 级（Gamma `/events` 500 请求/10 秒），正常用量远低于阈值。
+
+### 2.4 阅读正文的策略
 
 **按 feed 定策略：**
 
@@ -93,9 +121,11 @@ miniflux entries --status unread --limit 100 --order published_at --direction de
 miniflux entry <id>    # 单篇全文（HTML），用正则去标签
 ```
 
-### 2.4 一周回顾的数据
+### 2.5 一周回顾的数据
 
 一周回顾需要 `--after <一周前日期>` 再拉一次，重点看深度 feed 在一周窗口内的主线（模型发布、安全事件、组织变动、硬件动向、科研进展），同时扫地缘（战争/贸易）与国内批判（司法/信访/科研伦理）的周度主线。
+
+一周回顾里可以加一段「市场预期的一周变化」：对本周主线相关的盘口跑 `polymarket history <market-slug> --interval 1w`，取 `first`/`last` 的 price 写成「从 X% 到 Y%」，与订阅/HN 的周度主线并列，不要单开一节。
 
 **推荐做法（最省事）**：把一周拆成「前半周 + 今天的两天窗」两段——先拉两天窗（§9.1），再拉 `--after <一周前> --before <今天窗口起点>`（实测 9 月 6→11 日为 3556 条、18 页、约 40 秒），两段按 id 合并去重即覆盖整周。落盘到 `/tmp/mf_week.json` 后在 python 里按 `feed_id` 分组，**只打印需要的东西**：
 
@@ -133,7 +163,7 @@ miniflux mark <id1> <id2> ... --status read
 
 ```
 1. 顶部一句话（lead，深色块）        —— 全文唯一的总述
-2. ①~⑧ 主题部分（7–8 个）           —— 科技科研前沿 + 地缘政治 + 人文 + 批判监督 + 区块链/加密，订阅与 HN 完全融合
+2. ①~⑧ 主题部分（7–8 个）           —— 科技科研前沿 + 地缘政治 + 人文 + 批判监督 + 区块链/加密，订阅 + HN + Polymarket 完全融合
 3. 头条黑卡（Headline of the Day）    —— 放在最相关的主题段之后
 4. ⑨ 一周回顾                        —— 最后，对最近一周的总结
 5. footer                            —— 数据来源 + 数据窗口 + 已读标记说明
@@ -141,7 +171,8 @@ miniflux mark <id1> <id2> ... --status read
 
 ### 4.2 融合规则
 
-- **订阅与 HN 彻底融合**：每个主题部分内部同时编织订阅消息和 HN 热度（例如「AI 军备竞赛」段既写国产算力/模型发布，也写 HN 的对应高分帖），**不要**出现「一、我的订阅」「二、Hacker News 简报」这样的分节。
+- **订阅、HN 与 Polymarket 彻底融合**：每个主题部分内部同时编织订阅消息、HN 热度与同题盘口赔率（例如「AI 军备竞赛」段既写国产算力/模型发布，也写 HN 的对应高分帖，并给出「某模型按期发布」「某公司存续」这类同题市场的隐含概率），**不要**出现「一、我的订阅」「二、Hacker News 简报」「三、Polymarket 热点」这样的来源分节。
+- **Polymarket 按主题融入**：先看当天订阅与 HN 的主线，再从热点榜挑同题盘口——地缘政治段写战争/台海/伊朗/封锁盘，经济与政策段写美联储降息、政府停摆、选举盘，加密段写 BTC/ETH 价格与 ETF 盘，AI 段写模型发布、公司存续、监管盘。找不到同题市场的主题不硬塞。赔率用来回答「市场怎么给这件事定价」和「新闻与市场预期是否背离」。**唯一例外**：盘口事件本身就是当天新闻时（大额异动被媒体引用、重要市场临时上线或结算），可单列一个「预测市场」主题段，段内同样编织订阅与 HN 的对应报道。
 - **主题不限于科技**：地缘政治（战争/贸易/能源）与人文社会（教育/文化/数字生活/社会事件）必须成段。素材来自金十数据、联合早报、竹新社、风向旗、中国数字时代、博客聚合；HN 上的人文向高分帖（教育制度、职业意义、社会议题）纳入对应主题，不硬塞进科技段落。
 - **科技科研前沿必须成段**：除 AI 商业/产品外，Nature、MIT 科技评论的硬科学进展（生物/医学/物理/能源/太空）单独一个主题；HN 上的科研向高分帖（论文、开源科学、实验发现）也进这段。
 - **批判内容直面原则**：负面新闻与监督性报道（中国数字时代、风声 OPINION、知识分子等转载）按事实写入对应主题或单列「直面批判」主题。「剔除存疑内容」只针对标题党/离谱传闻，不适用于可验证的批判事实；唯一例外是单一来源、情绪化的极端指控，只略写或不展开。
@@ -161,6 +192,7 @@ miniflux mark <id1> <id2> ... --status read
 - **禁止"不是…而是…"句式**（含"无…而是…"等变体，如"无线下丢给云端、而是在端侧跑推理"就是反面例子）以及任何空泛对比（"正把物尽其用逼成新的理性"是反面例子）。
 - 直接陈述事实 + 数字（`<span class="num">` 高亮关键数字）。
 - 可读正文后给 1–2 个硬事实，绝不编造。
+- 该主题有同题盘口时，在分析段之后加一个 `.odds` 块（见 §5）列 1–4 条市场赔率；`.odds` 属于该主题，不算新分节。
 
 ### 4.4 语言风格（去 AI 腔）
 
@@ -181,6 +213,9 @@ miniflux mark <id1> <id2> ... --status read
 - 只在分析段出现，用 `<span class="num">` 高亮。
 - 只标注原文给出的数字（points/comments、营收、百分比、金额），不编造。
 - HN 帖子标注：`（772 分）` 或 `（928 分/694 评论）`。
+- **Polymarket 赔率**：0–1 的价格换算成百分比，写「隐含概率 <span class="num">7.5%</span>」，并注明口径（最近成交价或 midpoint）；成交量写「24 小时成交 <span class="num">$25.2 万</span>」，全文货币单位统一（`$25.2M` 或 `$252 万` 只用一种）。
+- 一周变化写成可核对的两点对比（「从 <span class="num">3.9%</span> 升到 <span class="num">15.5%</span>」），数字全部来自 CLI 输出；市场截止日写成日期。
+- 英文市场标题译为中文，首次出现可括注原名；赔率本身已是事实，不要叠加「暴涨」「崩盘」这类主观判断。
 
 ---
 
@@ -211,6 +246,11 @@ miniflux mark <id1> <id2> ... --status read
   .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:20px 24px; font-size:14.5px; }
   .card p { margin-bottom:12px; } .card p:last-child { margin-bottom:0; }
   .card .num { color:var(--accent); font-weight:700; }
+  .odds { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 20px; font-size:13.5px; margin-bottom:12px; }
+  .odds .cap { font-size:12px; letter-spacing:.08em; color:var(--muted); margin-bottom:6px; }
+  .odds .row { display:flex; justify-content:space-between; gap:12px; padding:5px 0; border-bottom:1px dashed var(--line); }
+  .odds .row:last-child { border-bottom:none; }
+  .odds .row b { color:var(--accent); font-weight:700; white-space:nowrap; }
   .hn-headline { background:var(--ink); color:#fff; border-radius:10px; padding:22px; margin-top:12px; }
   .hn-headline .rank { font-size:12px; letter-spacing:.15em; color:#d9a08d; text-transform:uppercase; }
   .hn-headline h4 { font-size:19px; font-weight:800; margin:6px 0 4px; line-height:1.4; }
@@ -224,7 +264,7 @@ miniflux mark <id1> <id2> ... --status read
   <header>
     <div class="kicker">Daily Briefing</div>
     <h1>每日简报</h1>
-    <div class="meta">YYYY 年 M 月 D 日 · 周X · 订阅聚合 + Hacker News 融合</div>
+    <div class="meta">YYYY 年 M 月 D 日 · 周X · 订阅聚合 + Hacker News + Polymarket 融合</div>
   </header>
 
   <div class="lead"><b>一句话：</b>……（全文唯一总述，纯事实，无修辞）</div>
@@ -234,6 +274,12 @@ miniflux mark <id1> <id2> ... --status read
   <div class="card">
     <p>……（分析：带数字、融合订阅+HN、逻辑连贯）</p>
     <p>……</p>
+  </div>
+
+  <div class="odds">
+    <div class="cap">Polymarket 隐含概率 · 24 小时成交 … · 口径：最近成交价</div>
+    <div class="row"><span>市场问题（英文标题译为中文）</span><b>42%</b></div>
+    <div class="row"><span>另一条同题市场</span><b>7.5%</b></div>
   </div>
 
   <!-- 更多主题部分 ②③④⑤ -->
@@ -254,7 +300,7 @@ miniflux mark <id1> <id2> ... --status read
   </div>
 
   <footer>
-    数据来源：Miniflux 订阅聚合（…，覆盖 M 月 D–D 日，含已读与未读）· Hacker News 前 100 名。<br>
+    数据来源：Miniflux 订阅聚合（…，覆盖 M 月 D–D 日，含已读与未读）· Hacker News 前 100 名 · Polymarket 热点榜（24 小时成交量前 20，剔除体育盘）。<br>
     由 pi 自动生成 · 今日未读 N 条已全部标记为已读。
   </footer>
 </div>
@@ -264,22 +310,26 @@ miniflux mark <id1> <id2> ... --status read
 
 **常用主题划分（参考，按当天内容调整，科技科研前沿 + 地缘政治 + 人文 + 批判监督各至少一段）**：① AI 军备竞赛与人才洗牌 ② 写代码的人在想什么（程序员职业焦虑）③ 电脑越来越贵（硬件/内存焦虑）④ 科技科研前沿（Nature/MIT 科技评论：生物·医学·物理·能源·太空等硬科学，含 AI 研究本身）⑤ 地缘政治与世界大事（战争/能源/贸易/台海）⑥ 人文与社会（教育/文化/数字生活/社会事件）⑦ 直面批判（社会治理与监督：司法/信访/立法/科研伦理/审查）⑧ 区块链与加密市场（吴说为主：行情/ETF 资金流/链上安全事件/监管与代币化；**用户明确要求必须有**）⑨ 一周回顾。
 
+**Polymarket 不单列**：赔率按主题写进对应段的 `.odds` 块（战争/台海/封锁盘→⑤ 地缘政治，降息/选举/停摆盘→⑤ 或经济政策段，BTC 价格与 ETF 盘→⑧ 区块链，模型发布与公司存续盘→① AI，科研与监管盘→④⑦），紧跟该主题的 card；只有盘口本身构成当天新闻时才新增一个「预测市场」主题段。
+
 ---
 
 ## 6. 质量检查清单（发布前逐项过）
 
 - [ ] 顶部有一句话（lead），纯事实、无修辞
-- [ ] 没有「我的订阅 / HN 简报」分节，订阅与 HN 已彻底融合
-- [ ] 主题覆盖到位：地缘政治、人文/社会、科技科研前沿（Nature/MIT 科技评论硬科学进展）、直面批判（司法/信访/立法/科研伦理/审查）、区块链与加密各至少一段，均未被回避、未因「不够热」省略
+- [ ] 没有「我的订阅 / Hacker News 简报 / Polymarket 热点」这类来源分节，三个数据源已彻底融合
+- [ ] Polymarket 至少 3 条同题市场赔率，分布在 ≥2 个主题（写在 `.odds` 块或该主题的 card 里），每条标注隐含概率与 24 小时成交量；找不到同题市场的主题没有硬塞
+- [ ] 主题覆盖到位：地缘政治、人文/社会、科技科研前沿（Nature/MIT 科技评论硬科学进展）、直面批判（司法/信访/立法/科研伦理/审查）、区块链与加密各至少一段，均未被回避、未因「不够热」省略；只有盘口本身构成当天新闻时才出现单列的「预测市场」主题段
 - [ ] 每个主题部分 = plain 引入 + card 分析；引入无数字、初中生可读、落具体事实
 - [ ] 全文无「不是…而是…」（含「没有…而是…」等变体）、无空泛比喻、无 AI 腔总结句；分析段逻辑连贯，每句有明确因果/并列关系
 - [ ] 正文引用的 miniflux id 全部存在于窗口 dump（§9.4 的 id 断言），无跨窗错引与笔误
-- [ ] 数字全部来自原文，标注了 HN 的 points/comments；无编造；标题党/存疑传闻已剔除
+- [ ] 数字全部来自原文，标注了 HN 的 points/comments；Polymarket 的赔率与成交量取自 CLI 输出并注明价格口径（最近成交价或 midpoint）；无编造；标题党/存疑传闻已剔除
 - [ ] 头条选的是有实质内容、正文可抓取、与订阅可交叉印证的新帖（不盲从 rank 1），stats 行注明更高分帖的去向
 - [ ] 一周回顾放在最后，基于一周窗口（`--after` 一周前日期）的数据
 - [ ] 未读条目已全部 `mark --status read`，footer 注明
 - [ ] HTML 标签配对（`<div>`、`<span>`、`<b>`、`<h3>` 等 open==close），自包含无外部资源
-- [ ] footer 注明数据来源与窗口，源数与窗口内实际 feed 数一致
+- [ ] footer 注明数据来源与窗口，源数与窗口内实际 feed 数一致；Polymarket 行注明榜单口径（24 小时成交量、剔除体育）
+- [ ] Polymarket 引用的市场均为 `closed=false` 且 `endDate` 未过期；赔率/成交量已用最后一次 `events --open --order volume24hr --exclude-tag sports` 拉取复核
 - [ ] 已推送至 `b:~/base/NGPM/data/briefing/`，两端 MD5 一致；远端无多余软链接，`index.html` 指向最新一篇
 
 ---
@@ -298,6 +348,20 @@ miniflux mark <id1> <id2> ... --status read
 | `hn-briefing top` 偶发 fetch failed / 连到同一 IP 持续 Connect Timeout | 先重试一次；CLI 反复失败时放弃 CLI，改用自写 node 脚本直连 HN API（每请求最多 5 次重试、15s 超时、8 并发，输出结构与 CLI 一致） |
 | 周窗口 `total` 被截到 3000 | 疑似服务端返回上限（低于「约 3556 条」的旧经验）。仍按 offset 翻页拉满，再与两天窗按 id 合并去重，不要因 total 恰好 3000 就以为漏页 |
 | `miniflux search <关键词>` 查不到明明存在的条目 | search 不覆盖全部聚合源条目（实测搜「敬一丹」返回 0，但十年之约聚合里确有其条目）。**不能用 search 的 0 结果反推「只有单一来源」**，也不能靠 search 找窗口内素材，一律以窗口 dump（`/tmp/mf_all.json`）为准。博客聚合里的讣告/死讯类单来源标题（无任何新闻源印证）按存疑处理、不写入简报 |
+
+### Polymarket 数据
+
+| 问题 | 处理 |
+|---|---|
+| 热点榜被体育盘口霸榜 | 加 `--exclude-tag sports --min-liquidity 50000`；按主题浏览用 `--tag politics` / `--tag crypto` / `--tag geopolitics`（slug 会先解析成数字 id） |
+| `events --fields` / `--brief` 拿不到赔率 | 投影会丢掉 `markets[]`，改用默认输出的 `events`，或 `event <slug> --fields ...,markets` |
+| `search --fields` 返回 `{}` | 信封 `{events,tags,profiles}` 被投影掉；去掉 `--fields`，在本地 python 取字段 |
+| `price <event>` 报 "has N markets" | 多市场事件不接受事件级报价，用 `--market <序号或 slug>`，或 `event <slug>` 一次取全 |
+| 赔率读错 | 价格是 0–1 的概率：`0.0255` = 2.6%（不是 0.0255%）。`outcomeTokens[].price` 是最近成交价，`bestBid`/`bestAsk` 是挂单价，两者可能不一致；要中点用 `price` 的 `midpoint` 并注明口径 |
+| 输出里的 `null` | `price`、`bestBid`/`bestAsk` 都可能为 `null`（无成交或无挂单），**不能写成 0** 也不能直接做算术（会 `TypeError`）；`holders`/`trades` 按 `conditionId`，交易者 `user` 是代理钱包而非签名 EOA |
+| `history` 输出巨大 | points 常上千点，只取 `first`/`last` 的 price 与 timestamp 算变化；末桶 `resolutionSeconds: 0` 表示该桶未走完 |
+| 把已结算盘口当活跃市场写 | 引用前看 `closed` / `endDate`；`events --open` 已过滤，但 `search` 与 `event` 可能返回已关闭的市场 |
+| 赔率/榜单一小时内变了 | 与 HN 分数同样处理：发布前重跑 `events --open --order volume24hr --exclude-tag sports --min-liquidity 50000`，逐条核对文中引用的赔率与成交量（用标题子串匹配，别拿完整标题当 dict key） |
 
 ### 正文抓取（`hn-briefing content`）
 
@@ -366,7 +430,7 @@ miniflux mark <id1> <id2> ... --status read
 ## 8. 交付
 
 - 文件放在 `briefing-playbook/` 文件夹（与 playbook 同名）下：`briefing-playbook/briefing-YYYY-MM-DD.html`
-- 完成后向用户简述：① 结构（几个主题+回顾）② 头条选择理由 ③ 已读标记情况 ④ 剔除的存疑内容 ⑤ 可选的调整项（版式/长度/导出 Markdown）
+- 完成后向用户简述：① 结构（几个主题+回顾）② 头条选择理由 ③ 引用的 Polymarket 盘口与价格口径 ④ 已读标记情况 ⑤ 剔除的存疑内容 ⑥ 可选的调整项（版式/长度/导出 Markdown）
 
 ### 8.1 发布到远端（每次运行必做，一条命令一次完成，无需用户确认）
 
@@ -395,7 +459,7 @@ md5sum briefing-playbook/briefing-YYYY-MM-DD.html
 - 更新后 git 提交（playbook 文件已被跟踪，`briefing-playbook/` 目录被 `.gitignore` 忽略，无需提交简报文件）：
 
 ```bash
-cd /root/pi-playbook && git add briefing-playbook.md && git commit -m "docs: 更新简报 playbook（<一句本次经验>）"
+cd /root/pi-playbook && git add briefing-playbook.md run-briefing.sh && git commit -m "docs: 更新简报 playbook（<一句本次经验>）"
 ```
 
 - 无新经验则跳过，不强行改动。
@@ -464,7 +528,7 @@ done
 echo "TOTAL MARKED: $total"   # 用这个数写 footer 的“已读 N 条”
 ```
 
-### 9.4 发布前质量检查（标签配对 / 禁句 / 外链 / id 断言）
+### 9.4 发布前质量检查（标签配对 / 禁句 / 外链 / id 断言 / Polymarket 断言）
 
 **跑之前先做一件事**：断言会读 `/tmp/mf_week.json`，而 §9.1 只生成 `/tmp/mf_all.json`。`/tmp` 跨天不清理，若昨天跑过，它就是**昨天的一周窗**，会把今天真实存在的一周窗 id 全部误报为「窗口外」。拉完一周窗（落盘 `/tmp/mf_week_pt.json`）后先覆盖：
 
@@ -497,5 +561,37 @@ have = {str(e['id']) for f in ('/tmp/mf_all.json', '/tmp/mf_week.json') for e in
 # （实测 2026-09-28 与 2026-09-30 各踩一次，一次报错 1 个、一次报错 6 个）
 # 省事做法：写完周回顾先把 id 集合与 mf_week.json 求差，再逐个换成窗口内同主题条目
 assert not (ids - have), f'引用了窗口外的 id: {sorted(ids - have)}'
+# Polymarket：正文至少引用 3 处赔率（footer 里的「Polymarket 热点榜」也算 1 处）
+assert html.count('Polymarket') >= 3, 'Polymarket 引用不足 3 处（需 ≥3 条同题市场赔率）'
 print('OK')
+```
+
+### 9.5 拉取 Polymarket 热点榜并打印可写进简报的赔率行
+
+```bash
+export PATH="/root/pi-playbook/.agents/skills/polymarket/bin:$PATH"
+# 一次拿回事件 + 全部子市场 + 赔率；不剔除体育会让榜单被单场比赛霸占
+polymarket events --open --order volume24hr --exclude-tag sports --min-liquidity 50000 --limit 20 > /tmp/pm_hot.json
+```
+
+```python
+import json
+d = json.load(open('/tmp/pm_hot.json'))
+for e in d['events']:
+    print(f"== {e['title']}  | 24h ${e['volume24hr']:,.0f} | liq ${e['liquidity']:,.0f} | end {e['endDate'][:10]} | id {e['id']}")
+    for m in e.get('markets', []):
+        yes = next((t for t in (m.get('outcomeTokens') or []) if t['outcome'] == 'Yes'), None)
+        if not yes or yes.get('price') is None:   # 无成交/无挂单时 price 也会是 null，必须跳过
+            continue
+        print(f"   {yes['price']*100:5.1f}%  {m['question'][:80]}  (bid {m.get('bestBid')} / ask {m.get('bestAsk')})")
+```
+
+单市场精确口径与一周变化（`points` 可能上千点，只取 `first`/`last`）：
+
+```bash
+polymarket price <market-slug> --outcome Yes      # midpoint / spread / lastTradePrice
+polymarket history <market-slug> --interval 1w | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+print(d['question'], '| 1w:', d['first']['price'], '->', d['last']['price'], '| points', d['pointCount'])"
 ```
