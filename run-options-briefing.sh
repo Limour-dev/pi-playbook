@@ -2,8 +2,8 @@
 # ============================================================
 # 期权与加密日报自动生成脚本（"定时 @ 手册" 的实现）
 # 手册：options-briefing-playbook.md
-# 建议 cron：TZ=Asia/Shanghai 30 5 * * 2-6
-#   （美东 16:00 收盘 = CST 04:00/05:00，05:30 已有完整当日快照；
+# 建议 cron：TZ=Asia/Shanghai 0 5 * * 2-6
+#   （美东 16:00 收盘 = CST 04:00/05:00，05:00 已有当日收盘快照；
 #     必须早于每日简报 run-briefing.sh 的 06:00，简报会读这份日报）
 # 功能：
 #   1. 用 pi-agent（非交互 -p）执行 options-briefing-playbook.md

@@ -287,8 +287,8 @@ done
 
 ```bash
 # 与简报同机（gcp:/root/pi-playbook）时，加在 root 的 crontab：
-# TZ=Asia/Shanghai 05:30 执行 —— 美东 16:00 收盘 = CST 04:00/05:00，05:30 已有完整当日快照
-30 5 * * 2-6 /root/pi-playbook/run-options-briefing.sh >> /var/log/run-options-briefing-cron.log 2>&1
+# TZ=Asia/Shanghai 05:00 执行 —— 美东 16:00 收盘 = CST 04:00/05:00，05:00 已有当日收盘快照
+0 5 * * 2-6 /root/pi-playbook/run-options-briefing.sh >> /var/log/run-options-briefing-cron.log 2>&1
 ```
 
 - **时间顺序**：期权日报必须**早于**每日简报（简报 06:00 读它）。**不要**把期权日报排在简报之后。
