@@ -84,6 +84,10 @@ SK="$PLAYBOOK_DIR/.agents/skills"
 # ① 五个标的的周五结构：一次拿 spot / net_gex / flip / walls / max_pain / EM / IV / PCR
 "$SK/options-gex/bin/options-gex" scan GLD IBIT TLT SPY QQQ --exp "$FRIDAY" --concurrency 2 --format compact > /tmp/og_scan.json
 
+# ①b 期限结构 / sign_flips：必须**不带 --exp**（带 --exp 会把 scan 钉在单到期日上，
+#     直接返回 sign_flips: [] 并给 warning "--exp pins the scan to ..."，全周对比就没了）
+"$SK/options-gex/bin/options-gex" scan SPY QQQ --dte 21 --max-exp 8 --concurrency 2 --format compact > /tmp/og_term.json
+
 # ② 墙位与墙位 OI、到现价的距离（单标的、token 小；报告里的墙位数字一律以这次为准）
 for t in SPY QQQ GLD IBIT TLT; do
   "$SK/options-gex/bin/options-gex" walls $t --exp "$FRIDAY" --no-insights --format compact
@@ -140,7 +144,7 @@ done
 | **GLD（黄金/实际利率）** | GOLD 的周线与日线 kc1_mid/median_200、DXY | 同上（注意 GLD 周五常是全表唯一负 gamma） | 跌破 put wall 与收复 flip 各自意味着什么 | 与收益率上行是否共振？风险偏好是收缩还是缓解？ |
 | **IBIT（加密/流动性）** | BTC 周线、USDT.D 方向 | IBIT 周五 gamma 堆积区（正/负节点） | 墙位破/守 → 风偏外溢 | 给 QQQ 的是「托底」还是「退潮」？ |
 
-- **IBIT ↔ BTC 换算**：用**当日** `IBIT spot` 与 `BTCUSD close` 的比值换算（实测 ≈1765–1790，不要写死），把 IBIT 的墙位翻译成 BTC 价位写进报告。
+- **IBIT ↔ BTC 换算**：用**当日** `IBIT spot` 与 BTCUSD **最近一根已收盘的 1h（或 4h）K 线收盘价**的比值换算（实测 2026-10-05 用 1h 18:00Z close = 85,656.87 → 比值 **1764**；区间约 1764–1790 随日漂移，**不要写死**），把 IBIT 的墙位翻译成 BTC 价位写进报告。**别用日线 close**：日线最新一根只到前一交易日，实测会把比值抬到 1781（差 ≈1.4%）。
 - **只输出传导含义**：可以写「TLT 跌破 75.9 会把长端压力传导到 QQQ 的 749/742」，**不要**写「TLT 可以做多/做空」。
 
 ### 4.3 SPY / QQQ
@@ -237,7 +241,7 @@ done
 - **`bullish_score` 由上游定义、组成未公开**，只作横向参考，不可解释成具体指标。
 - **`gamma_flip` 与 `zero_gamma_estimate`** 是两个口径：后者是行权价网格上的线性插值交叉校验，相差几美元属正常，**报告以 `gamma_flip` 为准**。
 - **`oi_source` 若不是 `"oi"`**，说明统计口径可能变成成交量，必须在报告里说明。
-- **tradingview 只返回已收盘 K 线**：日线在其收盘后还要等满 24 小时才出现（保守），报告里写 `coverage.last` 与 `as_of`；`USDT.D` / `US10Y` / `GOLD` / `DXY` / `VIX` 是**指数/百分比序列**，`volume_reliable: false`、`volume` 为 `null`，**不要用它们的量能做推断**。
+- **tradingview 只返回已收盘 K 线**：日线在其收盘后还要等满 24 小时才出现（保守），报告里写 `coverage.last` 与 `as_of`；`USDT.D` / `US10Y` / `GOLD` / `DXY` / `VIX` 是**指数/百分比序列**，`volume_reliable: false`、`volume` 为 `null`，**不要用它们的量能做推断**。实测 2026-10-05 的滞后期：`GOLD`/`US10Y`/`DXY` 日线最末一根是 10-01、`VIX` 是 10-02（`stale: true`，age 3–4 天），BTCUSD/USDT.D 日线是 10-04（交易日的上一日），`--no-cache` 也不会让它们变新。**写"当前价"：加密用最近已收盘的 1h/4h K 线，宏观指数明确写"截至 MM-DD"。**
 - 免责：本报告是公开持仓结构的读数，不构成投资建议。
 
 ---
@@ -249,6 +253,10 @@ done
 | 两个数据源的同一指标对不上 | 实测同一到期日 QQQ 的 put wall 在 `options-gex` 是 749、在 `optioncharts` 是 730；GLD 的 EM 是 1.64% vs 1.52%/1.65%。**同一指标只取单一来源**：墙位/flip/max pain 取 `options-gex`，成交量/OI/PCR/±1EM 归一化取 `optioncharts`，各自标注来源与快照时刻，**不并列进同一张表** |
 | 快照漂移很快 | 实测约 2 分钟内 SPY `net_gex` 从 +\$4.84B → +\$5.71B → +\$6.35B，spot 775.67 → 776.31。**写报告前重跑一次 `scan` 与 `walls`**，全文只引用这一次的数（或分块标注各自时刻），不要把两个小时前的数字和现在的混用 |
 | `options-gex` 的 `--dte` 对 `levels`/`walls`/`gex` 无效 | `--dte` 只作用于 `expiries` 与 `scan`；其它命令传了只在 stderr 提示忽略。要钉到期日就用 `--exp` |
+| `options-gex scan` 带 `--exp` 会**关掉 `sign_flips`** | 实测 2026-10-05：`scan ... --exp 2026-10-09` 返回 `sign_flips: []` 并在 `warnings` 里写 `"--exp pins the scan to 2026-10-09"`。**要期限结构就单跑一次不带 `--exp` 的 `scan --dte N --max-exp M`**（见 §3 ①b），带 `--exp` 的那次只用来取单日总览 |
+| `walls` 输出里的 `call_wall_distance.pct` 符号反直觉 | 它的口径是 `(spot − level)/spot`，所以 **call wall 在现价上方时 pct 是负数**（实测 SPY 787 → −1.39，put wall 767 → +1.18）。报告里统一用自己的口径 `(level − spot)/spot` 重算一遍，别直接抄 |
+| `tradingview` 的 `symbol -> EXCHANGE [kind]` 解析行走 **stderr** | 用 `2>&1` 拼起来会污染 CSV 表头（实测 `BTCUSD -> BITSTAMP:BTCUSD [alias/high]`）。解析 CSV/JSON 时只取 stdout，或加 `--quiet` |
+| 指数/宏观序列的日线滞后 2–4 天 | 实测 2026-10-05：`GOLD`/`US10Y`/`DXY` 最末日线是 10-01、`VIX` 是 10-02（`stale: true`，age 3–4 天），`--no-cache` **不会**让它们变新。报告里写"截至 MM-DD"，不要当成当日价 |
 | `optioncharts` 的到期日必须带 `:w`/`:m` | 裸日期会被解析并可能静默换到期日（默认 exit 5）；第三个周五是 `:m`。用 `expiries` 查后缀 |
 | 忘了 `tradingview` 要装依赖 | 首跑 `npm install`，否则所有命令报 `dependencies missing` |
 | 用日线当"今天" | 19:11 UTC（周一）时，日线最后一根是**上一交易日**（2026-10-04），周一的日线还没收盘。读 `coverage.last` / `last_bar_age` / `stale`，必要时用 4h 序列看最新的动能变化 |
@@ -270,8 +278,9 @@ done
 - [ ] 每个数字都带来源与快照时刻；同一张表没有混两个快照/两个来源
 - [ ] `摘要卡` 与 `供简报引用（通俗结论）` 存在、零术语、可直接抄进简报
 - [ ] ±1EM 区间来自 per-expiry EM；剧本 A/B/C 都给了触发条件与目标位
-- [ ] IBIT ↔ BTC 换算用了当日比值，没有写死
-- [ ] tradingview 数据标了 `coverage.last` / `as_of`；指数序列没有用成交量
+- [ ] IBIT ↔ BTC 换算用了当日**最近一根已收盘 1h/4h** 的比值，没有写死、也没拿日线 close 凑
+- [ ] tradingview 数据标了 `coverage.last` / `as_of` / `stale`；宏观指数的日线滞后已在正文写明；指数序列没有用成交量
+- [ ] 期限结构（`sign_flips`）来自一次**不带 `--exp`** 的 `scan`，且只用进分析过程、没进结论
 - [ ] §0 口径段落与末节免责段落完整
 - [ ] §7「与上一份报告的差异」已写（或注明首份）；写法：先 `ls -t briefing-playbook/options-briefing-*.md | head -2` 找上一份，用关键词 grep 确认哪些结论变了
 - [ ] 文件路径与命名：`briefing-playbook/options-briefing-YYYY-MM-DD.md`
