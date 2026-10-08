@@ -242,7 +242,7 @@ done
 - **OI 是上一交易日收盘值**，不代表盘中持仓变化；`net_gex` 假设全部合约由 dealer 中介。
 - **数据源为第三方聚合**（Sell The News / optioncharts），非交易所原始数据；`updated_at` 是服务端计算时刻，**不是行情时间戳**。
 - **期权报价为 OPRA 15 分钟延迟**（不适合做盘中执行级信号），`spot` 为实时（Polygon.io）。
-- **`spot` 必须交叉核对**：`options-gex` 的 `spot` 偶尔整天滞后（实测 2026-10-07 IBIT 返回前一日收盘）。以 `optioncharts spot <T>`（实时 Polygon）为准交叉，不一致时在报告里写明"本标的现价取自 optioncharts / 墙位数值锚定在滞后 spot 上，只作结构参考"。
+- **`spot` 必须交叉核对**：`options-gex` 的 `spot` 偶尔整天滞后（实测 2026-10-07 IBIT、2026-10-08 **IBIT 与 TLT 同时中招**；TLT 的 `updated_at` 停在美东 10-07 21:00，spot 返回 77.175 = 10-07 收盘，而真实 10-08 收盘 77.87（+0.94%））。以 `optioncharts spot <T>`（实时 Polygon）为准交叉，不一致时用真实价重算"距现价"，并在报告里写明"本标的现价取自 optioncharts / 墙位数值锚定在滞后 spot 上，只作结构参考"。**若该标的 `updated_at` 落后一个交易日，则整条链（walls / flip / max_pain / OI）都是上一交易日的，不能只当成 spot 一个字段的问题。**
 - **`bullish_score` 由上游定义、组成未公开**，只作横向参考，不可解释成具体指标。
 - **`gamma_flip` 与 `zero_gamma_estimate`** 是两个口径：后者是行权价网格上的线性插值交叉校验，相差几美元属正常，**报告以 `gamma_flip` 为准**。
 - **`oi_source` 若不是 `"oi"`**，说明统计口径可能变成成交量，必须在报告里说明。
@@ -267,7 +267,8 @@ done
 | 忘了 `tradingview` 要装依赖 | 首跑 `npm install`，否则所有命令报 `dependencies missing` |
 | `tradingview` 偶发 `database is locked` | 连续/并发调用下 SQLite 缓存会整条返回 `{"error":{"code":"ERROR","message":"database is locked"}}`（实测 2026-10-06 `BTCUSD --tf W` 首跑即中）。**sleep 2–3 秒后重试即可成功**；脚本里对交易视调用做 2–3 次重试 |
 | 同一次 `scan` 内各标的 `updated_at` 可能差数小时 | 实测 2026-10-06 一次 `scan GLD IBIT TLT SPY QQQ`：SPY/QQQ/GLD ≈ 21:00Z，但 **TLT = 01:00Z、IBIT = 12:50Z**（服务端计算时点滞后）。**必须逐标的读 `provenance.updated_at`**，滞后的在正文注明"数据略滞后"，不要当成同一时刻的快照 |
-| **`options-gex` 的 `spot` 可能整天滞后**（实测 2026-10-07 IBIT） | `walls` / `scan` / `provenance` 全部回读 `spot = 48.515`（≈ 前一日收盘 48.49），`updated_at` 抖动但 spot 不变、`--no-cache` 重取也一样；而 optioncharts `spot IBIT` 与 tradingview `IBIT --tf 1h/30m` 两个独立来源都给出当日真实收盘 **47.20（−2.66%）**。**处理：抓完 ② 立刻跑 §3 ②b 的 `optioncharts spot` 交叉核对；不一致时现价与"距现价"用真实值重算，并在报告里注明"墙位/flip/max pain 的数值锚定在滞后 spot 上、该标的只作结构参考"。** 其余四只标的两个来源一致（2026-10-07 实测 SPY 777.34/777.22、QQQ 757.98/757.73、GLD 375.81/375.88、TLT 77.175/77.14） |
+| **`options-gex` 的 `spot` 可能整天滞后**（实测 2026-10-07 IBIT；2026-10-08 **IBIT + TLT 同时中招**） | IBIT：`walls` / `scan` / `provenance` 全部回读 `spot = 48.515`（≈ 前两天收盘），`updated_at` 抖动但 spot 不变、`--no-cache` 重取也一样；optioncharts `spot IBIT` 与 tradingview `IBIT --tf 1h/30m` 两个独立来源都给出当日真实收盘（10-07 **47.20（−2.66%）**、10-08 **46.26（−2.01%）**）。TLT：`updated_at = 2026-10-08T01:00Z`（≈ 美东 10-07 21:00）时整条链都停在 10-07，spot 返回 77.175，真实 10-08 收盘 77.87（optioncharts 与 tradingview 1h 一致）。**处理：抓完 ② 立刻跑 §3 ②b 的 `optioncharts spot` 交叉核对；不一致时现价与"距现价"用真实值重算，并在报告里注明"墙位/flip/max pain 的数值锚定在滞后 spot 上、该标的只作结构参考"。** 其余标的两个来源一致（2026-10-08 实测 SPY 773.78/773.93、QQQ 747.61/747.58、GLD 378.47/378.62） |
+| `options-gex` 某标的 `updated_at` 落后一个交易日 → **整条链都是上一交易日的** | 实测 2026-10-08 TLT：`updated_at = 2026-10-08T01:00Z`，`scan` / `walls` 的全部数值（`net_gex` +$69.11M、flip 75.91、call/put wall = max_pain = 78）与上一份报告**逐字相同**，因为源数据根本没更新。**判据：先看 `updated_at` 是否落在本交易日的计算窗口内；不在就把该标的整行（含墙位与结构结论）标注"只作结构参考"，不要用它的墙位做精确距离结论。** |
 | IBIT 的 spot 滞后会把"支撑"错判成"压力"（同一条坑的方向性后果） | 实测：滞后的 48.515 让 48 看起来是「下方支撑」（−1.06%）；真实 47.20 下 48 是「头顶压力」（+1.69%），结论从"托底"直接翻转成"退潮"。**别只改现价数字、忘了同时改写墙位方向与传导结论。** |
 | `net_gex` 可能≈0 且 spot 贴在 `gamma_flip` 上 | 实测 2026-10-06 GLD：`net_gex` = −\$714K（几乎归零），spot 382.25 vs flip 382.26（差 \$0.01），`regime` 被划成 negative、`spot_vs_flip` 是 below。**此时不给方向性读数**，写成"处在正负 gamma 临界点上"，结论看两侧的墙位（下方负节点 / 上方正节点） |
 | 用日线当"今天" | 19:11 UTC（周一）时，日线最后一根是**上一交易日**（2026-10-04），周一的日线还没收盘。读 `coverage.last` / `last_bar_age` / `stale`，必要时用 4h 序列看最新的动能变化 |
@@ -289,7 +290,7 @@ done
 - [ ] 每个数字都带来源与快照时刻；同一张表没有混两个快照/两个来源；`scan` 里各标的 `updated_at` 逐只核对过，明显滞后的已在正文注明
 - [ ] `摘要卡` 与 `供简报引用（通俗结论）` 存在、零术语、可直接抄进简报
 - [ ] ±1EM 区间来自 per-expiry EM；剧本 A/B/C 都给了触发条件与目标位
-- [ ] `optioncharts spot` 交叉核对过五个标的的现价；与 `options-gex` 不一致的（如 IBIT 的 spot 滞后）已用真实价重算距离、并同步改写了墙位方向与传导结论
+- [ ] `optioncharts spot` 交叉核对过五个标的的现价；与 `options-gex` 不一致的（实测 IBIT 连续两天、TLT 也有）已用真实价重算距离、并同步改写了墙位方向与传导结论；`updated_at` 落后一个交易日的标的（如 TLT）整行标注"只作结构参考"
 - [ ] IBIT ↔ BTC 换算用了当日**最近一根已收盘 1h/4h** 的比值，没有写死、也没拿日线 close 凑
 - [ ] tradingview 数据标了 `coverage.last` / `as_of` / `stale`；宏观指数的日线滞后已在正文写明（`stale: false` 也可能滞后约 2 天，仍按 `coverage.last` 写"截至 MM-DD"）；指数序列没有用成交量
 - [ ] 期限结构（`sign_flips`）来自一次**不带 `--exp`** 的 `scan`，且只用进分析过程、没进结论
