@@ -379,6 +379,7 @@ miniflux mark <id1> <id2> ... --status read
 | `price <event>` 报 "has N markets" | 多市场事件不接受事件级报价，用 `--market <序号或 slug>`，或 `event <slug>` 一次取全 |
 | 赔率读错 | 价格是 0–1 的概率：`0.0255` = 2.6%（不是 0.0255%）。`outcomeTokens[].price` 是最近成交价，`bestBid`/`bestAsk` 是挂单价，两者可能不一致；要中点用 `price` 的 `midpoint` 并注明口径 |
 | 输出里的 `null` | `price`、`bestBid`/`bestAsk` 都可能为 `null`（无成交或无挂单），**不能写成 0** 也不能直接做算术（会 `TypeError`）；`holders`/`trades` 按 `conditionId`，交易者 `user` 是代理钱包而非签名 EOA；**`events`/`search` 的结果里混有占位市场**（问句以 `Company A`…/`Person X`… 命名、价格恰好是 `50%`），必须过滤，不能当真实赔率写进简报（实测 2026-10-07 的最佳模型盘与西班牙首相盘） |
+| 子市场 `volume24hr` 常为 0 | `events` 榜单只填充事件级成交量，`markets[].volume24hr` 实测整榜为 0（含活跃盘）。`.odds` 的成交量写事件级 `event.volume24hr` 并注明「事件级」，需要用子市场精确成交量时改走 `market <ref>` / `price <ref>` |
 | `history` 输出巨大 | points 常上千点，只取 `first`/`last` 的 price 与 timestamp 算变化；末桶 `resolutionSeconds: 0` 表示该桶未走完 |
 | 把已结算盘口当活跃市场写 | 引用前看 `closed` / `endDate`；`events --open` 只保证 `closed=false`，**不代表 `endDate` 未过**——实测 2026-10-06 的热点榜仍包含 `endDate` 为 10-05（前一天）的巴西大选盘与「Bitcoin Up or Down on October 5」，引用前必须逐条核对 `endDate`；`search` 与 `event` 更可能返回已关闭的市场 |
 | 赔率/榜单一小时内变了 | 与 HN 分数同样处理：发布前重跑 `events --open --order volume24hr --exclude-tag sports --min-liquidity 50000`，逐条核对文中引用的赔率与成交量（用标题子串匹配，别拿完整标题当 dict key） |
