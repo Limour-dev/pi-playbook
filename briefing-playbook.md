@@ -364,6 +364,8 @@ miniflux mark <id1> <id2> ... --status read
 | `--compact` 里 feed 不是字符串 | 用 `e['feed']['title']`（当成字符串会报错） |
 | `--compact` 输出里 `url` 为空 | 紧凑字段会丢掉原文链接（`e['url']` 为 `null`，Nature 等 feed 的原文地址拿不到）。**要链接就 `miniflux entry <id>` 取完整 JSON**，`url`/`external_url` 齐全，再交给 `hn-briefing content` 抓正文 |
 | 分页偶发 `fetch failed` / offset 漂移 / 空页 | 瞬时错误重试该页，判空要判断 entries 非空（`json.load` 对空列表也通过）。分页期间快讯会进新条目导致 offset 错位漏页：凌晨窗口稳定，白天执行需在标已读前重拉一次取 unread 并集，或把两天窗与一周窗按 id 合并去重补齐。offset 超出 total 的空页是正常终点，不是网络错误 |
+| `miniflux feed-entries` 默认按时间升序 | 查某个 feed 的最新条目必须显式加 `--order published_at --direction desc`；实测 `feed-entries --feed-id <id> --limit 10` 返回的是最早的十条，容易误判成「这个 feed 最近没更新」。窗口内素材一律以窗口 dump（`/tmp/mf_all.json`）为准，不用 `feed-entries` |
+| 聚合源个别条目 `content` 为空 | 实测金十《AI前沿日报》这类条目的 `content` 在 `--plain-text` 与 `miniflux entry <id>` 下都为空（正文是外链/图片），读不到正文就按标题成稿，不要当抓取失败 |
 | 一次性打印数百条标题/正文被截断 | 输出在约 50KB 处静默截断、较旧条目被丢弃。**必须按 feed 分批打印**：一次 bash 调用只打一两个 feed（深度 feed 一组、金十万条级单独过滤），另可 `title[:60]` 缩短每条。**单个 feed 也可能超窗**：实测金十 479 条标题会在约 300 行处截断，单 feed 超过 300 条时按时间切成两段打印，或从断点 id 续打（`if e['id']==<断点 id>: started=True`） |
 | `hn-briefing top` 偶发 fetch failed / 连到同一 IP 持续 Connect Timeout | 先重试一次；CLI 反复失败时放弃 CLI，改用自写 node 脚本直连 HN API（每请求最多 5 次重试、15s 超时、8 并发，输出结构与 CLI 一致） |
 | 周窗口 `total` 被截到 3000 | 疑似服务端返回上限（低于「约 3556 条」的旧经验）。仍按 offset 翻页拉满，再与两天窗按 id 合并去重，不要因 total 恰好 3000 就以为漏页 |
@@ -383,6 +385,7 @@ miniflux mark <id1> <id2> ... --status read
 | `history` 输出巨大 | points 常上千点，只取 `first`/`last` 的 price 与 timestamp 算变化；末桶 `resolutionSeconds: 0` 表示该桶未走完 |
 | 把已结算盘口当活跃市场写 | 引用前看 `closed` / `endDate`；`events --open` 只保证 `closed=false`，**不代表 `endDate` 未过**——实测 2026-10-06 的热点榜仍包含 `endDate` 为 10-05（前一天）的巴西大选盘与「Bitcoin Up or Down on October 5」，引用前必须逐条核对 `endDate`；`search` 与 `event` 更可能返回已关闭的市场 |
 | 赔率/榜单一小时内变了 | 与 HN 分数同样处理：发布前重跑 `events --open --order volume24hr --exclude-tag sports --min-liquidity 50000`，逐条核对文中引用的赔率与成交量（用标题子串匹配，别拿完整标题当 dict key） |
+| `events` 的 `price` 与 `history` 的 `last` 会差一档 | 同一市场实测 `events` 报 83.5%，而 `history --interval 1w` 的 `last` 是 84.5%。`.odds` 统一用 `events` 的 `outcomeTokens[].price`（最近成交价）并注明口径；只有「一周变化」才用 history 的 `first`/`last`，两处数值不要求逐点相等 |
 
 ### 正文抓取（`hn-briefing content`）
 
@@ -433,6 +436,7 @@ miniflux mark <id1> <id2> ... --status read
 | QA 报 "PLAIN HAS DIGITS" | 引入段出现阿拉伯数字即触发：中文量词前的数字（「2 纳米」「16 岁」「113 天」「8 万美元」）、模型/软件版本号（「Fable 5.1」「htmx 4.0」）、游戏名里的数字（「《半条命 2》」）、组织缩写（「G20」）都算。改写为「最新工艺」「未成年人」「新的大版本」「二十国集团」，数字与版本号全部留给 card；中文数字（「四成多」）可通过但仍尽量避免 |
 | 质量检查脚本打印的 `len(html)` | 是字符数不是 UTF-8 字节数（12760 字符 ≈ 23354 字节），与 scp 文件大小对比时别误读 |
 | 简报里出现 miniflux id | 正文里任何 6 位纯数字（如 `（307001）` 这类括注）都是泄漏的 entry id，发布前必须删干净——实测多篇成品混入了几十个 `（3xxxxx）`。id 只在本地核对时用，**溯源靠 §7「全窗口正文语料 grep」的关键词比对**，不靠把 id 写进 HTML；§9.4 有硬断言拦截 |
+| QA 的 id 断言与金额写法 | §9.4 的 id 正则 `\d{6}` 只看连续六位数字：价格/金额写成带千分位逗号或中文「万/亿」（`82,000 美元`、`10.79 亿`、`$75.2 万`）既能通过断言又便于阅读，不要写 `150000` 这类连写大数（会被当成泄漏的 id 拦下） |
 
 ### 发布与并发
 
