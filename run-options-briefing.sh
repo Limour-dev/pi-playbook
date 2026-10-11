@@ -72,8 +72,12 @@ fi
     echo ""
     echo "============================================================"
     echo "[$(date '+%F %T')] 执行结束 exit=$rc"
-    [ -s "$TODAY_BRIEFING" ] && echo "产物: $TODAY_BRIEFING ($(wc -c < "$TODAY_BRIEFING") bytes)" \
-                             || echo "产物: 缺失（$TODAY_BRIEFING 未生成）"
+    if [ -s "$TODAY_BRIEFING" ]; then
+        echo "产物: $TODAY_BRIEFING ($(wc -c < "$TODAY_BRIEFING") bytes)"
+    else
+        echo "产物: 缺失（$TODAY_BRIEFING 未生成）"
+        [ "$rc" -eq 0 ] && rc=1   # 产物缺失时不能报成功（实测 2026-10-10 曾 exit=0 但无产物）
+    fi
     echo "============================================================"
     exit $rc
 } >> "$LOG_FILE" 2>&1
