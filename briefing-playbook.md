@@ -386,6 +386,7 @@ miniflux mark <id1> <id2> ... --status read
 | 把已结算盘口当活跃市场写 | 引用前看 `closed` / `endDate`；`events --open` 只保证 `closed=false`，**不代表 `endDate` 未过**——实测 2026-10-06 的热点榜仍包含 `endDate` 为 10-05（前一天）的巴西大选盘与「Bitcoin Up or Down on October 5」，引用前必须逐条核对 `endDate`；`search` 与 `event` 更可能返回已关闭的市场 |
 | 赔率/榜单一小时内变了 | 与 HN 分数同样处理：发布前重跑 `events --open --order volume24hr --exclude-tag sports --min-liquidity 50000`，逐条核对文中引用的赔率与成交量（用标题子串匹配，别拿完整标题当 dict key） |
 | `events` 的 `price` 与 `history` 的 `last` 会差一档 | 同一市场实测 `events` 报 83.5%，而 `history --interval 1w` 的 `last` 是 84.5%。`.odds` 统一用 `events` 的 `outcomeTokens[].price`（最近成交价）并注明口径；只有「一周变化」才用 history 的 `first`/`last`，两处数值不要求逐点相等 |
+| `event <slug>` 用猜测的 slug 会静默命中旧年份市场或输出空 | 实测 `event fed-decision-in-december` 返回 2025-12-10 的盘口、`event what-price-will-bitcoin-hit-in-october` 返回 2024 年的盘口；多市场事件（如 `israel-x-iran-ceasefire-continues-through`、`us-announces-end-of-iranian-blockade-by`）则输出空而非报错。**一律先用 `search "<关键词>"` 拿到当年 slug 与赔率，再核对 `endDate` 的年份**；发布前复核也用 search，不要用猜的 slug。另外 AI 模型盘（「Which company has the best AI model…」，事件级 24h 成交约 $10 万）不在 `--min-liquidity 50000` 的热点榜里，复核时必须单独 search |
 
 ### 正文抓取（`hn-briefing content`）
 
