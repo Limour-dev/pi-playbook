@@ -86,7 +86,7 @@ polymarket search "<关键词>" --limit 5                 # 按主题找市场�
 2. **不要给 `events` 加 `--fields` / `--brief`**：会丢掉 `markets[]`，只剩事件级字段，拿不到赔率。要赔率就用默认输出的 `events` 列表（一次请求带全部子市场），或对单个事件用 `event <slug>`（`--fields` 时要显式带上 `markets`）。
 3. **`search` 加 `--fields` 会返回 `{}`**：search 的信封是 `{events,tags,profiles}`，投影不存在的顶层字段会把内容全部丢掉。要精简在本地 python 里取字段。
 4. **赔率是 0–1 的概率**：`outcomeTokens[].price` 是最近成交价（`0.075` = 7.5%），`bestBid`/`bestAsk` 是挂单最优价，两者可能不一致（实测同一市场 `price 0.0005` 而 `ask 0.001`）。要精确中点用 `polymarket price <market-slug>` 的 `midpoint`，简报里注明用的是哪种口径。**三者都可能是 `null`**（薄盘无成交或无挂单，实测巴西大选盘大量候选为 `price: null`），`null` 不能写成 0、也不能直接参与算术（会 `TypeError`）。
-5. **多市场事件不能直接 `price <event>`，`history <event-slug>` 同样报错**：`price` 会报错并列出候选（含每个市场的 bid/ask）；`history` 对多市场事件返回非 JSON（`Expecting value: line 1 column 1`，实测 2026-10-05 的 Fed、伊朗封锁、众议院三个事件盘）。此时用 `event <slug>` 拿全（一次列出每个市场的 slug），或 `--market <n|slug>` 指定第 n 个（1 起），再对具体市场 slug 跑 `history`。
+5. **多市场事件不能直接 `price <event>`，`history <event-slug>` 同样报错**：`price` 会报错并列出候选（含每个市场的 bid/ask）；`history` 早期对多市场事件返回非 JSON（`Expecting value: line 1 column 1`，实测 2026-10-05 的 Fed、伊朗封锁、众议院三个事件盘），现版本与 `price` 一致：报错并列出候选市场 slug（实测 2026-10-16，可直接从报错里抄 slug 再跑 `history`）。此时用 `event <slug>` 拿全（一次列出每个市场的 slug），或 `--market <n|slug>` 指定第 n 个（1 起），再对具体市场 slug 跑 `history`。
 6. **引用前检查 `closed` / `endDate`**：只写仍在交易的市场；已结束或已结算的盘口只在它本身构成当天新闻时作为「结果」引用。
 7. **赔率与榜单变动快**：和 HN 分数一样，发布前重跑一次热点榜复核文中引用的每条赔率/成交量（见 §7「Polymarket 数据」）。
 8. 只读、无需 API key、零依赖；限流为 IP 级（Gamma `/events` 500 请求/10 秒），正常用量远低于阈值。
@@ -451,7 +451,7 @@ miniflux mark <id1> <id2> ... --status read
 | 当天成品被中断（footer 留着 `__MARKED__` 占位符、未推送） | 判定：成品 mtime 比本次执行起点早几十秒到几分钟、当日日志只有本次那一条 header（`>>` 追加，只有一条说明当天此前没跑完过）、`briefing.lock` 持有者就是自己（无并行任务）。**不重写，做四项校验后补完**：① 用 §7「全窗口正文语料 grep」（`/tmp/mf_pt.json`、`/tmp/mf_week_pt.json`）逐个校验成品里的数字/细节都能在窗口内找到出处（发布版 HTML 里本就不许有 id，不要再抽取 id）② 用最新 `top 100` 复核并更新正文引用的每条 HN 分数 ③ 跑 §9.4 QA（含 `__MARKED__`）④ 按 §3 改写 footer、推送。整套约十分钟，比重写整篇快得多 |
 | 手动会话写到一半，`run-briefing.sh` 起来了并接管成品 | 实测它会把手动会话的半成品当「被中断的同日成品」校验补完（改 footer、更新 HN 分数）后推送。**此时手动会话不要抢推**：先确认那个 run 已结束（无持有者），再核两端 MD5，**并且必须逐句复核它改过的地方**（本次它改了 3 处，其中「投票 6 比 3」是前瞻数据，已改回）。若自己先推了，`scp` 会把对方更新的分数覆盖回去，需重推一次并保持 `index.html` 指向最新 |
 | cron 日志写「今天的简报已存在，本次跳过」但成品不在 | 幂等判断 `-s "$TODAY_BRIEFING"` 看的是**当时**的文件，日志只是那一刻的快照，文件随后被删除或移动时日志不会更新（实测 2026-10-04 02:43 的 `run-2026-10-04.log` 有此行，但 `briefing-playbook/` 与远端目录里都没有 `briefing-2026-10-04.html`）。**一律以现在的成品文件为准**：文件不在就照常生成并推送，不要因为日志里有跳过记录而跳过。 |
-| cron 跑完无产出 | 五种表现都按「未执行」处理、放心手动跑：① 日志只有 header；② 日志是「你贴了手册但没说要做什么」的提问式输出（agent 把 `-p @file` 当成未给任务就退出 exit=0）；③ 连 `run-YYYY-MM-DD.log` 都没生成；④ 日志有 `[pi-trace-id]` 块、末尾是 `Connection error.`、结尾行 `执行结束 exit=1`；⑤ 同样结构但末尾是 `Request timed out.`。**以「日志里有没有执行痕迹/成品文件」为准，别被非空日志骗了**，判定顺序先 `ls briefing-playbook/run-$(date +%F).log`。cron 失败会把新增窗口拉长成「昨日终点 → 现在」（可超 30 小时、unread 累积上千条），判定昨日终点仍用窗口内已读条目的 `max(published_at)`。手动 scp 会覆盖 cron 留下的同名空文件，推送后再核一次 MD5 |
+| cron 跑完无产出 | 六种表现都按「未执行」处理、放心手动跑：① 日志只有 header；② 日志是「你贴了手册但没说要做什么」的提问式输出（agent 把 `-p @file` 当成未给任务就退出 exit=0）；③ 连 `run-YYYY-MM-DD.log` 都没生成；④ 日志有 `[pi-trace-id]` 块、末尾是 `Connection error.`、结尾行 `执行结束 exit=1`；⑤ 同样结构但末尾是 `Request timed out.`；⑥ 日志是一段 Cloudflare 5xx 错误 JSON（实测 `Error 525: SSL handshake failed`、`zone: oaapi.limour.top`、`exit=1`、无 `[pi-trace-id]`，即 provider 侧的 SSL 握手失败，非本任务问题）。**以「日志里有没有执行痕迹/成品文件」为准，别被非空日志骗了**，判定顺序先 `ls briefing-playbook/run-$(date +%F).log`。cron 失败会把新增窗口拉长成「昨日终点 → 现在」（可超 30 小时、unread 累积上千条），判定昨日终点仍用窗口内已读条目的 `max(published_at)`。手动 scp 会覆盖 cron 留下的同名空文件，推送后再核一次 MD5 |
 
 ---
 
