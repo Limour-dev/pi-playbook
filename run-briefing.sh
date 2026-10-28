@@ -56,7 +56,7 @@ fi
         --skill "$PLAYBOOK_DIR/.agents/skills/miniflux" \
         --skill "$PLAYBOOK_DIR/.agents/skills/hn-briefing" \
         --skill "$PLAYBOOK_DIR/.agents/skills/polymarket" \
-        --provider axon --model deepseek-flash \
+        --provider axon --model deepseek-v4.1-flash \
         -p "@$PLAYBOOK_FILE"
     rc=$?
 
